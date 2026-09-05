@@ -4,13 +4,18 @@ import { config } from "../config";
 export class OllamaProvider implements AIProvider {
   id = "ollama";
   name = "Ollama (Local)";
+  private customConfig?: { baseUrl?: string; model?: string };
+
+  constructor(customConfig?: { baseUrl?: string; model?: string }) {
+    this.customConfig = customConfig;
+  }
 
   private get baseUrl(): string {
-    return config.ollamaBaseUrl.replace(/\/$/, "");
+    return (this.customConfig?.baseUrl || config.ollamaBaseUrl).replace(/\/$/, "");
   }
 
   private get model(): string {
-    return config.ollamaModel;
+    return this.customConfig?.model || config.ollamaModel;
   }
 
   async isAvailable(): Promise<boolean> {

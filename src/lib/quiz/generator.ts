@@ -111,7 +111,7 @@ Return JSON matching:
 
 function generateStarterQuiz(topic?: string): { sessionId: string; questions: QuizQuestion[] } {
   const db = getDb();
-  const sessionId = `quiz_${Date.now()}`;
+  const sessionId = `quiz_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const questions: QuizQuestion[] = [
     {
       id: "q_start_1",

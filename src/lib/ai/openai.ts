@@ -4,17 +4,25 @@ import { config } from "../config";
 export class OpenAIProvider implements AIProvider {
   id = "openai";
   name = "OpenAI / Compatible";
+  private customConfig?: { apiKey?: string; baseUrl?: string; model?: string; name?: string };
+
+  constructor(customConfig?: { apiKey?: string; baseUrl?: string; model?: string; name?: string }) {
+    this.customConfig = customConfig;
+    if (customConfig?.name) {
+      this.name = customConfig.name;
+    }
+  }
 
   private get apiKey(): string {
-    return config.openaiApiKey;
+    return this.customConfig?.apiKey || config.openaiApiKey;
   }
 
   private get baseUrl(): string {
-    return config.openaiBaseUrl.replace(/\/$/, "");
+    return (this.customConfig?.baseUrl || config.openaiBaseUrl).replace(/\/$/, "");
   }
 
   private get model(): string {
-    return config.openaiModel;
+    return this.customConfig?.model || config.openaiModel;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -27,6 +35,8 @@ export class OpenAIProvider implements AIProvider {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "MyAI Knowledge Vault",
       },
       body: JSON.stringify({
         model: options?.model || this.model,
@@ -38,7 +48,7 @@ export class OpenAIProvider implements AIProvider {
 
     if (!res.ok) {
       const err = await res.text().catch(() => "Unknown error");
-      throw new Error(`OpenAI API error (${res.status}): ${err}`);
+      throw new Error(`AI API error (${res.status}): ${err}`);
     }
 
     const data = await res.json();
@@ -54,6 +64,8 @@ export class OpenAIProvider implements AIProvider {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "MyAI Knowledge Vault",
       },
       body: JSON.stringify({
         model: options?.model || this.model,

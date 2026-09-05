@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { Menu, X, PlusCircle, Search, BrainCircuit } from "lucide-react";
-import { Button } from "@/lib/../components/ui/button";
+import { Button } from "@/components/ui/button";
 
 export function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);

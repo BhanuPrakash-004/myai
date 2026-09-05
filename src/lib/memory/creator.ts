@@ -68,7 +68,7 @@ Return ONLY the markdown note. Do not wrap in outer backticks.`;
   // Preview snippet for SQLite
   const preview = decision.content.slice(0, 300);
 
-  // Insert into SQLite
+  // Insert into SQLite (robust against orphaned records)
   const insertStmt = db.prepare(`
     INSERT INTO memories (
       id, title, file_path, topic, subcategory, knowledge_type,
@@ -81,6 +81,15 @@ Return ONLY the markdown note. Do not wrap in outer backticks.`;
       0, ?, ?,
       ?, ?
     )
+    ON CONFLICT(file_path) DO UPDATE SET
+      title = excluded.title,
+      topic = excluded.topic,
+      subcategory = excluded.subcategory,
+      knowledge_type = excluded.knowledge_type,
+      importance = excluded.importance,
+      content_preview = excluded.content_preview,
+      forgetting_score = excluded.forgetting_score,
+      updated_at = excluded.updated_at
   `);
 
   insertStmt.run(
@@ -98,8 +107,9 @@ Return ONLY the markdown note. Do not wrap in outer backticks.`;
     now
   );
 
-  // Sync to FTS5
+  // Sync to FTS5 with defensive delete to prevent duplicate FTS rows
   try {
+    db.prepare("DELETE FROM memories_fts WHERE file_path = ?").run(filePath);
     const ftsInsert = db.prepare(`
       INSERT INTO memories_fts (title, content, topic, subcategory, file_path)
       VALUES (?, ?, ?, ?, ?)
