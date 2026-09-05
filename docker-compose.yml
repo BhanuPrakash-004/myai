@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  myai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: myai-knowledge-base
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - VAULT_PATH=/app/vault
+      - DATABASE_PATH=/app/data/myai.db
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=llama3.1
+    volumes:
+      - ./vault:/app/vault
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

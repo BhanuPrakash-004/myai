@@ -1,0 +1,1127 @@
+# AI Personal Knowledge Base — Master Build Prompt
+
+## 1. Project
+
+Build a web application that acts as an **AI-powered personal knowledge base**, replacing traditional manual note-taking.
+
+The system is designed primarily for developers/students who know a topic but repeatedly forget small, important details such as:
+
+* syntax
+* APIs/functions
+* implementation details
+* logic
+* common mistakes
+* DSA patterns
+* LeetCode approaches
+* code snippets
+* interview-specific knowledge
+* important concepts
+
+The user should **not need to decide where or how to save information**. They simply chat with the AI. The AI understands the content, determines whether it is worth remembering, categorizes it, and creates or updates the appropriate knowledge.
+
+### Example
+
+User:
+
+> "I always forget that in BFS I need to take q.size() before the for loop."
+
+AI understands:
+
+```text
+DSA → Graph → BFS
+Type: Common mistake
+Importance: High
+```
+
+and stores/updates the BFS knowledge.
+
+Another example:
+
+> "Map.Entry<Integer,Integer> entry : map.entrySet()"
+
+AI understands this belongs to:
+
+```text
+Java → Collections → Map → Iteration
+```
+
+The user can later ask:
+
+> "What Java Map things do I usually forget?"
+
+or:
+
+> "Explain everything important I have stored about BFS."
+
+or:
+
+> "Quiz me on my Java knowledge."
+
+The application should turn the user's accumulated knowledge into a **personalized learning/revision system**.
+
+---
+
+# 2. Problem
+
+Traditional notes require users to:
+
+1. decide what is important,
+2. create a note,
+3. choose a folder,
+4. categorize it,
+5. maintain/update it,
+6. remember where they stored it.
+
+Users often don't forget entire topics. They forget **small details inside topics**.
+
+This application solves that by making the AI responsible for:
+
+**understanding → organizing → storing → updating → retrieving → reviewing**
+
+the user's personal knowledge.
+
+---
+
+# 3. Product Goal
+
+Build a system where:
+
+> **The user talks naturally, and the AI maintains their personal knowledge automatically.**
+
+The knowledge belongs to the user and should be stored in **Markdown files**, making it portable and compatible with Obsidian and other Markdown tools.
+
+The application itself provides:
+
+* online access
+* AI chat
+* knowledge browsing
+* intelligent search
+* automatic organization
+* personalized explanations
+* quizzes
+* revision
+* identification of knowledge gaps and frequently forgotten information
+
+---
+
+# 4. Core Principles
+
+1. **AI-first, not note-editor-first**
+2. **Zero-friction capture**
+3. **User should not manually categorize knowledge**
+4. **Do not save every conversation**
+5. **Prefer updating/merging existing knowledge over creating duplicates**
+6. **Markdown is the source of knowledge**
+7. **SQLite stores application metadata**
+8. **User owns/exportable knowledge**
+9. **The AI should understand context across the knowledge base**
+10. **The system should learn what the individual user frequently forgets**
+
+---
+
+# 5. Recommended Tech Stack
+
+## Frontend
+
+* Next.js
+* React
+* TypeScript
+* Tailwind CSS
+* shadcn/ui
+
+## Backend
+
+Use Next.js server/API routes initially.
+
+Do not introduce a separate backend unless required.
+
+## AI
+
+Primary:
+
+* Ollama
+* Local open-source instruct model
+
+Design the AI layer so another LLM provider can be plugged in later.
+
+Use structured JSON outputs for AI decisions.
+
+## Storage
+
+### Knowledge
+
+Markdown files.
+
+Example:
+
+```text
+vault/
+├── Java/
+│   ├── Collections/
+│   │   └── Map.md
+│   ├── Streams.md
+│   └── Syntax.md
+├── DSA/
+│   ├── Graph/
+│   │   ├── BFS.md
+│   │   └── DFS.md
+│   └── DP/
+├── LeetCode/
+│   ├── Two-Pointers.md
+│   └── Sliding-Window.md
+└── AI/
+```
+
+### Application metadata
+
+* SQLite
+
+Store:
+
+* users
+* memory IDs
+* file paths
+* categories
+* importance
+* created/updated timestamps
+* review history
+* interaction statistics
+
+## Search
+
+V1:
+
+* SQLite FTS5 / keyword search
+
+Later:
+
+* embeddings
+* Qdrant semantic search
+
+## Authentication
+
+* Better Auth or equivalent open-source solution
+
+Add after core functionality works.
+
+## Code display
+
+* Monaco Editor or syntax-highlighted code blocks
+
+Only add Monaco if editing code becomes necessary.
+
+## Deployment
+
+* Docker
+* Linux VPS/cloud
+* Persistent volume for Markdown vault + SQLite
+
+---
+
+# 6. Core Features
+
+## A. AI Chat
+
+The primary interface.
+
+User can:
+
+* ask questions
+* save information
+* explain knowledge
+* search knowledge
+* update knowledge
+* summarize knowledge
+* compare concepts
+* generate examples
+* generate quizzes
+* prepare for interviews
+
+Examples:
+
+```text
+"Remember this: Java HashMap is not thread safe."
+
+"What did I save about BFS?"
+
+"Explain my Java Map knowledge."
+
+"What Java concepts am I weak on?"
+
+"Quiz me on DSA."
+
+"Give me my most important Java memories."
+
+"What do I usually forget about graphs?"
+```
+
+---
+
+# 7. Intelligent Memory Capture
+
+Every relevant user message should be classified.
+
+Possible actions:
+
+```text
+IGNORE
+CREATE
+UPDATE
+MERGE
+DELETE
+QUERY
+EXPLAIN
+QUIZ
+REVIEW
+```
+
+The AI should determine:
+
+* Is this knowledge?
+* Is it worth storing?
+* What topic does it belong to?
+* Is there an existing related memory?
+* Should existing knowledge be updated?
+* What importance does it have?
+* Is it a syntax, concept, mistake, approach, snippet, API, etc.?
+
+Example structured result:
+
+```json
+{
+  "action": "UPDATE",
+  "topic": "DSA",
+  "subcategory": "Graph/BFS",
+  "type": "common_mistake",
+  "importance": "high",
+  "content": "Capture q.size() before processing the current BFS level"
+}
+```
+
+---
+
+# 8. Knowledge Types
+
+The system should support:
+
+### Concept
+
+```text
+Binary Search
+BFS
+Dependency Injection
+HashMap
+```
+
+### Syntax
+
+```text
+Map.Entry<K,V>
+map.entrySet()
+```
+
+### API / Function
+
+```text
+HashMap methods
+String methods
+Java Stream methods
+```
+
+### Logic
+
+```text
+Why q.size() must be captured in BFS
+```
+
+### Common Mistake
+
+```text
+Using q.size() dynamically during BFS level traversal
+```
+
+### Code Snippet
+
+```java
+for (Map.Entry<Integer,Integer> entry : map.entrySet()) {
+    ...
+}
+```
+
+### DSA Pattern
+
+```text
+Sliding Window
+Two Pointers
+Binary Search
+DFS
+BFS
+DP
+```
+
+### LeetCode Approach
+
+Store:
+
+* problem
+* pattern
+* approach
+* key insight
+* complexity
+* common mistake
+* user's personal difficulty
+
+---
+
+# 9. Automatic Organization
+
+The user should never need to manually choose folders.
+
+AI determines the best location.
+
+Example:
+
+```text
+User:
+"Remember Map.Entry is used when I need both key and value."
+
+AI:
+Java → Collections → Map
+```
+
+If `Map.md` already exists:
+
+**UPDATE IT.**
+
+Do not create another Map note.
+
+If related knowledge exists:
+
+**MERGE IT.**
+
+---
+
+# 10. Knowledge File Format
+
+Use consistent Markdown.
+
+Example:
+
+````markdown
+# BFS
+
+## Core Concept
+
+...
+
+## Important Details
+
+### Queue Size
+
+Remember to capture `q.size()` before processing the level.
+
+```java
+int size = q.size();
+
+for (int i = 0; i < size; i++) {
+    ...
+}
+````
+
+## Common Mistakes
+
+* Using dynamic `q.size()` inside the loop.
+
+## Personal Memory
+
+User frequently forgets this detail.
+
+## Related
+
+* DFS
+* Graph Traversal
+* Level Order Traversal
+
+````
+
+The exact format can evolve, but files must remain readable by humans.
+
+---
+
+# 11. Knowledge Base Browser
+
+Provide an online interface to browse:
+
+```text
+Java
+ ├── Collections
+ │   ├── Map
+ │   └── List
+ ├── Streams
+ └── Syntax
+
+DSA
+ ├── Graph
+ │   ├── BFS
+ │   └── DFS
+ ├── DP
+ └── Binary Search
+
+LeetCode
+ ├── Two Pointers
+ ├── Sliding Window
+ └── ...
+````
+
+Features:
+
+* tree navigation
+* Markdown rendering
+* code highlighting
+* search
+* edit
+* recent knowledge
+* important knowledge
+* frequently forgotten knowledge
+
+---
+
+# 12. Knowledge Search
+
+User can search naturally:
+
+```text
+"What do I know about BFS?"
+
+"Show Java Map functions."
+
+"What are my saved DP mistakes?"
+
+"Find everything related to sliding window."
+```
+
+Search should combine:
+
+1. keyword search
+2. metadata
+3. semantic search when available
+
+The AI should synthesize results rather than simply return files.
+
+---
+
+# 13. Personalized Memory
+
+Track which knowledge the user:
+
+* repeatedly asks about
+* marks important
+* reviews
+* gets wrong in quizzes
+* frequently updates
+* repeatedly forgets
+
+Example:
+
+```text
+Frequently Forgotten
+
+1. BFS queue size
+2. Map.Entry / entrySet()
+3. DP initialization
+4. Binary search boundaries
+```
+
+This is one of the core differentiators of the application.
+
+---
+
+# 14. Study / Review Mode
+
+User can ask:
+
+> "What should I revise?"
+
+AI generates a personalized review.
+
+Possible modes:
+
+### Quick Review
+
+5–10 important memories.
+
+### Interview Review
+
+Only Java/DSA/LeetCode knowledge.
+
+### Weak Areas
+
+Topics where the user frequently makes mistakes.
+
+### Topic Review
+
+```text
+Review my BFS knowledge.
+```
+
+### Random Review
+
+Random knowledge from the user's vault.
+
+---
+
+# 15. AI Quiz Generator
+
+User can request:
+
+```text
+Quiz me on Java.
+Quiz me on BFS.
+Quiz me on my weak areas.
+Give me 10 interview questions.
+```
+
+Quiz types:
+
+* MCQ
+* true/false
+* short answer
+* code completion
+* debugging
+* explain-the-concept
+* predict-output
+* LeetCode approach questions
+
+Questions should be generated primarily from the user's own knowledge base.
+
+After answering:
+
+* evaluate answer
+* explain mistakes
+* update weakness/frequency metadata
+* optionally create/update a memory
+
+---
+
+# 16. AI Knowledge Analysis
+
+User can ask:
+
+```text
+"What am I missing in Java?"
+
+"What important BFS concepts haven't I saved?"
+
+"What should I know before a Java interview?"
+
+"What are my weak DSA areas?"
+
+"What important topics have I not covered?"
+```
+
+AI should distinguish between:
+
+**Knowledge stored by the user**
+
+and
+
+**General knowledge suggested by the AI.**
+
+Do not silently save general AI-generated information unless the user asks or confirms.
+
+---
+
+# 17. LeetCode Knowledge
+
+Support dedicated knowledge for coding problems.
+
+Each problem can contain:
+
+```text
+Problem
+Pattern
+Approach
+Key Insight
+Algorithm
+Complexity
+Code
+Mistakes
+Personal Notes
+Related Problems
+```
+
+Example:
+
+```text
+LeetCode
+ └── 3Sum
+      ├── Pattern: Two Pointers
+      ├── Approach
+      ├── Important Detail
+      ├── Common Mistakes
+      └── Code
+```
+
+The AI should also be able to identify patterns across problems.
+
+Example:
+
+> "Show me all problems where I used sliding window."
+
+---
+
+# 18. Import / Export
+
+Support:
+
+### Import
+
+* Markdown
+* Obsidian vault
+* folders of `.md` files
+
+### Export
+
+* complete Markdown vault
+* ZIP
+* individual Markdown files
+
+Never make the user dependent on proprietary storage.
+
+---
+
+# 19. Obsidian Compatibility
+
+Markdown should remain compatible with Obsidian.
+
+Architecture:
+
+```text
+Application
+     ↓
+Markdown Vault
+     ↓
+Obsidian
+```
+
+Obsidian is optional.
+
+Do not make the application dependent on the Obsidian application for core storage.
+
+Later optionally build an Obsidian plugin.
+
+---
+
+# 20. UI Pages
+
+Minimum pages:
+
+### `/chat`
+
+Main AI interface.
+
+### `/knowledge`
+
+Knowledge tree/browser.
+
+### `/knowledge/[id]`
+
+Knowledge detail page.
+
+### `/search`
+
+Search knowledge.
+
+### `/review`
+
+Personalized review.
+
+### `/quiz`
+
+AI quiz.
+
+### `/dashboard`
+
+Overview:
+
+* total knowledge
+* recent memories
+* important memories
+* frequently forgotten
+* weak areas
+* recent reviews
+
+### `/settings`
+
+* AI model
+* vault location
+* export
+* account
+* preferences
+
+---
+
+# 21. Memory Engine
+
+This is the core custom component.
+
+Implement:
+
+```text
+MemoryDetector
+MemoryClassifier
+MemoryRetriever
+MemoryResolver
+MemoryCreator
+MemoryUpdater
+MemoryMerger
+MemoryImportanceScorer
+MemoryTracker
+ReviewEngine
+```
+
+Flow:
+
+```text
+User Message
+     ↓
+Intent Detection
+     ↓
+Memory Decision
+     ↓
+Topic Classification
+     ↓
+Search Existing Knowledge
+     ↓
+Resolve Related Memory
+     ↓
+Create / Update / Merge / Ignore
+     ↓
+Markdown
+     ↓
+Metadata
+```
+
+Avoid duplicate notes.
+
+---
+
+# 22. AI Tool Interface
+
+Give the AI controlled tools/functions such as:
+
+```text
+search_knowledge()
+get_knowledge()
+create_knowledge()
+update_knowledge()
+merge_knowledge()
+delete_knowledge()
+list_topics()
+get_weak_areas()
+get_frequently_forgotten()
+start_review()
+generate_quiz()
+```
+
+The AI should use tools instead of directly manipulating arbitrary files whenever possible.
+
+---
+
+# 23. Safety / Data Rules
+
+* Never silently delete knowledge.
+* Preserve version/history when updating important knowledge.
+* Never overwrite an existing file blindly.
+* Never save every conversation automatically.
+* User should be able to see what was saved.
+* User should be able to correct/move/delete knowledge.
+* Keep Markdown exportable.
+* Do not send private knowledge to external AI providers when using local AI.
+* Clearly distinguish AI-generated knowledge from user-confirmed knowledge.
+
+---
+
+# 24. Development Phases
+
+## Phase 1 — Foundation
+
+Tasks:
+
+1. Create Next.js + TypeScript project.
+2. Configure Tailwind/shadcn.
+3. Create basic application layout.
+4. Create chat page.
+5. Set up SQLite.
+6. Create Markdown vault system.
+7. Create basic configuration/environment system.
+8. Add Docker setup.
+9. Add Ollama integration.
+10. Verify local AI request/response.
+
+**Deliverable:** user can chat with local AI.
+
+---
+
+## Phase 2 — Memory Engine
+
+Tasks:
+
+1. Define memory schema.
+2. Define knowledge types.
+3. Implement structured AI output.
+4. Implement memory detection.
+5. Implement topic classification.
+6. Implement importance scoring.
+7. Implement CREATE.
+8. Implement IGNORE.
+9. Implement UPDATE.
+10. Implement MERGE.
+11. Implement duplicate detection.
+12. Generate Markdown files.
+13. Store metadata in SQLite.
+14. Show "Saved to knowledge base" UI.
+
+**Deliverable:** user can send a message and AI automatically stores useful knowledge.
+
+---
+
+## Phase 3 — Knowledge Browser
+
+Tasks:
+
+1. Build knowledge tree.
+2. Read Markdown files.
+3. Render Markdown.
+4. Syntax highlight code.
+5. Show metadata.
+6. Add edit.
+7. Add delete.
+8. Add move/recategorize.
+9. Add recent knowledge.
+10. Add important knowledge.
+
+**Deliverable:** complete online knowledge base.
+
+---
+
+## Phase 4 — Search + AI Retrieval
+
+Tasks:
+
+1. Implement SQLite FTS5.
+2. Search Markdown knowledge.
+3. Build AI search tool.
+4. Retrieve related knowledge.
+5. Answer questions using retrieved knowledge.
+6. Add source/file references.
+7. Add semantic embeddings.
+8. Integrate Qdrant only if needed.
+9. Combine keyword + semantic retrieval.
+
+**Deliverable:** user can ask questions about their entire knowledge base.
+
+---
+
+## Phase 5 — Personalized Memory
+
+Tasks:
+
+1. Track memory interactions.
+2. Track review results.
+3. Track repeated questions.
+4. Detect frequently forgotten knowledge.
+5. Calculate weakness signals.
+6. Build "Frequently Forgotten" page.
+7. Build "Weak Areas" page.
+8. Build personalized recommendations.
+
+**Deliverable:** system understands what this particular user struggles to remember.
+
+---
+
+## Phase 6 — Study / Review
+
+Tasks:
+
+1. Build review engine.
+2. Build quick review.
+3. Build topic review.
+4. Build interview review.
+5. Build weak-area review.
+6. Generate personalized summaries.
+7. Add review history.
+8. Add optional spaced repetition later.
+
+**Deliverable:** user can prepare quickly from their own knowledge.
+
+---
+
+## Phase 7 — Quiz
+
+Tasks:
+
+1. Build quiz generation tool.
+2. Generate questions from knowledge.
+3. MCQ mode.
+4. Short-answer mode.
+5. Code completion mode.
+6. Debugging mode.
+7. Evaluate answers.
+8. Explain mistakes.
+9. Update weakness metadata.
+10. Generate follow-up questions.
+
+**Deliverable:** AI tutor based on the user's own knowledge.
+
+---
+
+## Phase 8 — LeetCode
+
+Tasks:
+
+1. Create LeetCode knowledge structure.
+2. Store problem metadata.
+3. Store approaches.
+4. Store patterns.
+5. Store mistakes.
+6. Store code.
+7. Link related problems.
+8. Search problems by pattern.
+9. Ask AI about saved approaches.
+10. Generate LeetCode review/quiz.
+
+**Deliverable:** personalized LeetCode knowledge system.
+
+---
+
+## Phase 9 — Import / Export / Obsidian
+
+Tasks:
+
+1. Import Markdown.
+2. Import Obsidian vault.
+3. Scan existing files.
+4. Build metadata.
+5. Detect duplicates.
+6. Preserve Markdown.
+7. Export complete vault.
+8. Export ZIP.
+9. Test Obsidian compatibility.
+10. Optionally build Obsidian plugin later.
+
+**Deliverable:** user owns portable knowledge.
+
+---
+
+## Phase 10 — Authentication + Production
+
+Tasks:
+
+1. Add authentication.
+2. User-specific vaults.
+3. Secure API routes.
+4. Add authorization.
+5. Persistent storage.
+6. Docker production configuration.
+7. Logging.
+8. Error handling.
+9. Backup/export.
+10. Deployment.
+11. Performance testing.
+12. Security review.
+
+**Deliverable:** production-ready multi-user application.
+
+---
+
+# 25. Important Development Rule
+
+Do not build all phases at once.
+
+Build and test sequentially.
+
+### MVP stopping point
+
+The first usable MVP is complete when:
+
+```text
+User
+ ↓
+Chat
+ ↓
+AI understands
+ ↓
+AI decides whether to remember
+ ↓
+AI categorizes
+ ↓
+AI creates/updates/merges Markdown
+ ↓
+User browses knowledge
+ ↓
+User searches knowledge
+ ↓
+User asks AI questions about knowledge
+```
+
+Only after this works should review, quizzes, personalization and LeetCode features be added.
+
+---
+
+# 26. AI Coding Agent Instructions
+
+You are the primary development agent for this project.
+
+Before implementing anything:
+
+1. Read this entire specification.
+2. Understand the product goal and problem.
+3. Inspect the existing repository.
+4. Determine the current implementation state.
+5. Do not rebuild functionality that already exists.
+6. Prefer mature open-source libraries/components.
+7. Keep the architecture simple.
+8. Avoid unnecessary dependencies.
+9. Do not introduce infrastructure without a clear requirement.
+10. Follow the phases in order.
+
+For every task:
+
+1. Identify the current phase.
+2. Identify the specific task being implemented.
+3. Inspect relevant existing code.
+4. Implement only the required functionality.
+5. Reuse existing components.
+6. Run tests/type checks/linting.
+7. Fix errors.
+8. Verify the feature manually where possible.
+9. Update documentation if architecture changes.
+10. Mark the task complete.
+11. Move to the next unfinished task.
+
+Never skip unfinished prerequisite tasks.
+
+Do not prematurely implement future phases.
+
+---
+
+# 27. Product Definition in One Sentence
+
+> **An AI-powered personal knowledge base that automatically captures, organizes, updates, and teaches the small developer-specific things a user tends to forget—from syntax and APIs to DSA logic, LeetCode approaches, code snippets, and interview knowledge.**
+
+# 28. MVP Success Criteria
+
+The MVP should make this interaction feel effortless:
+
+> **User:** "I always forget that BFS needs q.size() before the loop."
+
+> **AI:** Understands it is a personal memory → finds DSA/Graph/BFS → updates the existing knowledge → confirms what was saved.
+
+Later:
+
+> **User:** "What are the coding things I keep forgetting?"
+
+> **AI:** Analyzes the knowledge base and returns the user's most frequently forgotten/high-value items.
+
+That experience—not the Markdown editor, database, or AI framework—is the core product.
