@@ -1,11 +1,6 @@
-import { NextResponse } from "next/server";
-import { getWeakAreas } from "@/lib/memory/tracker";
-
-export async function GET() {
-  try {
-    const areas = getWeakAreas(10);
-    return NextResponse.json({ areas });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+import { StudyService } from "@/lib/storage/study";
+import { getStorage } from "@/lib/storage/client";
+import { privateRoute } from "@/lib/http";
+import { ok } from "@/lib/api";
+export const runtime="nodejs";
+export const GET=privateRoute(async()=>ok({areas:await new StudyService(getStorage().pool).weakAreas(20)}));

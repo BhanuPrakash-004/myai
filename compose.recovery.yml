@@ -1,0 +1,17 @@
+services:
+  recovery:
+    image: pgvector/pgvector:0.8.2-pg17-bookworm@sha256:feb68f4f15446397d8cac7f4fe48fe4586de83160d1fc48b46283312d1a33966
+    profiles: [recovery]
+    entrypoint: ["bash", "/recovery/recovery.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-myai}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-myai}
+    volumes:
+      - ./scripts/recovery:/recovery:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+      - attachments:/attachments
+    depends_on:
+      db:
+        condition: service_healthy

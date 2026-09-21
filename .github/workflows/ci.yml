@@ -1,0 +1,37 @@
+name: Release checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      OPENROUTER_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: docker compose -f compose.test.yml up -d --wait
+      - run: npm run test:db
+      - run: npm run test:http
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:release
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: synthetic-browser-failures
+          path: test-results/
+          retention-days: 7
+      - if: always()
+        run: docker compose -f compose.test.yml down --volumes

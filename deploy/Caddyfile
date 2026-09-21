@@ -1,0 +1,34 @@
+{
+  servers {
+    timeouts {
+      read_header 10s
+      read_body 35s
+      idle 2m
+    }
+  }
+}
+
+{$APP_DOMAIN} {
+  request_body {
+    max_size 12MB
+  }
+  header {
+    Strict-Transport-Security "max-age=31536000"
+    X-Content-Type-Options nosniff
+    X-Frame-Options DENY
+    Referrer-Policy same-origin
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    -Server
+  }
+  reverse_proxy myai:3000 {
+    # Caddy flushes text/event-stream immediately by default, preserving cancellation.
+    # Do not enable response buffering or cache authenticated pages.
+    transport http {
+      dial_timeout 5s
+      response_header_timeout 300s
+      read_timeout 300s
+      write_timeout 35s
+      keepalive 4s
+    }
+  }
+}

@@ -1,126 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { writeKnowledge } from "@/lib/vault";
-
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const pattern = searchParams.get("pattern");
-    const db = getDb();
-
-    let query = "SELECT * FROM leetcode_problems";
-    const params: any[] = [];
-
-    if (pattern) {
-      query += " WHERE pattern LIKE ?";
-      params.push(`%${pattern}%`);
-    }
-
-    query += " ORDER BY updated_at DESC";
-    const problems = db.prepare(query).all(...params);
-
-    // Also get all unique patterns for filtering
-    const patterns = db
-      .prepare("SELECT DISTINCT pattern FROM leetcode_problems ORDER BY pattern ASC")
-      .all() as { pattern: string }[];
-
-    return NextResponse.json({
-      problems,
-      patterns: patterns.map((p) => p.pattern),
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const {
-      problemName,
-      problemNumber,
-      pattern,
-      difficulty = "Medium",
-      approach,
-      keyInsight,
-      code,
-      mistakes,
-    } = body;
-
-    if (!problemName || !pattern) {
-      return NextResponse.json({ error: "problemName and pattern are required" }, { status: 400 });
-    }
-
-    const cleanName = problemName.trim().replace(/[<>:"/\\|?*]/g, "");
-    const filePath = `LeetCode/${cleanName.replace(/\s+/g, "-")}.md`;
-    const now = new Date().toISOString();
-
-    const markdown = `# ${problemNumber ? `${problemNumber}. ` : ""}${problemName}
-
-## Pattern
-- **Category**: ${pattern}
-- **Difficulty**: ${difficulty}
-
-## Approach
-${approach || "Standard optimal approach"}
-
-## Key Insight
-${keyInsight || "Key algorithmic turning point"}
-
-## Algorithm & Complexity
-- Time Complexity: O(N)
-- Space Complexity: O(1)
-
-## Code
-\`\`\`java
-${code || "// Solution code snippet"}
-\`\`\`
-
-## Common Mistakes
-${mistakes || "- Watch out for boundary edge conditions."}
-
-## Personal Notes
-Added via LeetCode manager.
-
-## Related Problems
-- Similar problems under ${pattern}
-`;
-
-    writeKnowledge(filePath, markdown);
-
-    const db = getDb();
-    const id = `lc_${Date.now()}`;
-
-    db.prepare(`
-      INSERT INTO leetcode_problems (
-        id, problem_name, problem_number, pattern, difficulty, file_path, times_reviewed, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
-      ON CONFLICT(file_path) DO UPDATE SET
-        pattern = excluded.pattern,
-        difficulty = excluded.difficulty,
-        updated_at = excluded.updated_at
-    `).run(id, problemName, problemNumber || null, pattern, difficulty, filePath, now, now);
-
-    // Also register in memories table
-    db.prepare(`
-      INSERT INTO memories (
-        id, title, file_path, topic, subcategory, knowledge_type, importance, content_preview, query_count, quiz_correct_count, quiz_incorrect_count, forgetting_score, created_at, updated_at
-      ) VALUES (?, ?, ?, 'LeetCode', ?, 'leetcode_approach', 4, ?, 0, 0, 0, 3.2, ?, ?)
-      ON CONFLICT(file_path) DO UPDATE SET
-        content_preview = excluded.content_preview,
-        updated_at = excluded.updated_at
-    `).run(
-      `mem_${id}`,
-      problemName,
-      filePath,
-      pattern,
-      (approach || keyInsight || problemName).slice(0, 200),
-      now,
-      now
-    );
-
-    return NextResponse.json({ success: true, filePath });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { knowledge } from "@/lib/storage/knowledge";
+import { transaction } from "@/lib/storage/client";
+import { privateRoute,jsonBody,operationKey } from "@/lib/http";
+import { ok } from "@/lib/api";
+export const runtime="nodejs";
+export const GET=privateRoute(async(r:NextRequest)=>{
+ const notes=(await knowledge().list({limit:10001})).filter(n=>n.metadata.kind==="leetcode"),pattern=r.nextUrl.searchParams.get("pattern");
+ return ok({problems:notes.filter(n=>!pattern||pattern==="All"||n.metadata.pattern===pattern).map(n=>({id:n.id,problem_name:n.title,problem_number:n.metadata.problemNumber,pattern:n.metadata.pattern,difficulty:n.metadata.difficulty,file_path:n.path,times_reviewed:0,updated_at:n.updated_at})),patterns:[...new Set(notes.map(n=>n.metadata.pattern))]});
+});
+export const POST=privateRoute(async(r:NextRequest)=>{
+ const text=z.string().max(20000).optional(),input=z.object({problemName:z.string().trim().min(1).max(150),problemNumber:z.number().int().positive().nullish(),pattern:z.string().trim().min(1).max(100),difficulty:z.enum(["Easy","Medium","Hard"]).default("Medium"),approach:text,keyInsight:text,code:text,mistakes:text}).strict().parse(await jsonBody(r));
+ const body=["# "+input.problemName,"Pattern: "+input.pattern,"Difficulty: "+input.difficulty,...[["Approach",input.approach],["Key insight",input.keyInsight],["Code",input.code],["Mistakes",input.mistakes]].filter(([,value])=>value).map(([heading,value])=>"## "+heading+"\n"+value)].join("\n\n");
+ const service=knowledge();
+ const receipt=await transaction(service.pool,async client=>{
+  const folderId=await service.ensureFolderPath("leetcode/"+input.pattern,client);
+  return service.executeInTransaction(client,{action:"create",idempotencyKey:operationKey(r),folderId,title:input.problemName,body,importance:4,metadata:{kind:"leetcode",pattern:input.pattern,difficulty:input.difficulty,problemNumber:input.problemNumber}});
+ });
+ return ok({filePath:receipt.path,receipt});
+});

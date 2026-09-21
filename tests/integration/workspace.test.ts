@@ -1,0 +1,67 @@
+import assert from "node:assert/strict";
+import { before, after, test } from "node:test";
+import { randomUUID } from "node:crypto";
+import { Pool } from "pg";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { createStorage, ROOT_FOLDER_ID } from "../../src/lib/storage/client";
+import { migrateDatabase } from "../../src/lib/storage/migrate";
+import { asMaintenance } from "../../src/lib/storage/access";
+import { KnowledgeService } from "../../src/lib/storage/knowledge";
+import { ImprovementService } from "../../src/lib/storage/improvements";
+import { AttachmentService } from "../../src/lib/storage/attachments";
+import { importMarkdown } from "../../src/lib/storage/imports";
+import { OpenRouterClient } from "../../src/lib/ai/openrouter";
+import { resolveAIConfig } from "../../src/lib/ai/preferences";
+const url = new URL(process.env.TEST_DATABASE_URL || "postgresql://myai_test:test-only-password@127.0.0.1:55433/myai_test");
+if (!url.pathname.startsWith("/myai_test")) throw new Error("Use a dedicated test database.");
+const admin = new Pool({ connectionString: url.toString() }), name = "myai_test_p06_" + randomUUID().replaceAll("-", "");
+let storage: ReturnType<typeof createStorage>, knowledge: KnowledgeService, improvements: ImprovementService, scratch: string;
+const run = <T>(fn: () => T) => asMaintenance(fn);
+const config = resolveAIConfig({ structuredModel: "test/structured" }, { OPENROUTER_API_KEY: "synthetic" });
+let calls = 0;
+const provider = new OpenRouterClient(config, { async start() { return randomUUID(); }, async finish() {} }, async () => {
+  calls++; return Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ title: "Improved fixture", body: "Organized fixture text.", changes: ["Organized text"], uncertainties: [] }) } }] });
+});
+before(async () => { await admin.query('CREATE DATABASE "' + name + '"'); url.pathname = "/" + name; storage = createStorage({ DATABASE_URL: url.toString() }); await migrateDatabase(storage.pool); knowledge = new KnowledgeService(storage.pool); improvements = new ImprovementService(knowledge); scratch = await mkdtemp(path.join(tmpdir(), "myai-p06-")); });
+after(async () => { await storage?.close(); await admin.query('DROP DATABASE "' + name + '" WITH (FORCE)'); await admin.end(); if (scratch) await rm(scratch, { recursive: true, force: true }); });
+test("P06 folders retain aliases, ordered empty folders, links and reject cycles/collisions/deletion of content", () => run(async () => {
+  const a = await knowledge.createFolder({ name: "Java" }), b = await knowledge.createFolder({ name: "Syntax", parentId: a.id });
+  const saved = await knowledge.execute({ action: "create", title: "Classes", body: "Exact class source", folderId: b.id, idempotencyKey: randomUUID() });
+  await assert.rejects(knowledge.moveFolder({ id: a.id, parentId: b.id, name: "Cycle" }), { code: "FOLDER_CYCLE" });
+  await knowledge.moveFolder({ id: a.id, parentId: ROOT_FOLDER_ID, name: "JVM", sortOrder: -2, aliases: ["java-basics"] });
+  assert.equal(await knowledge.resolveFolder("java/syntax"), b.id); assert.equal(await knowledge.resolveFolder("java-basics"), a.id);
+  assert.equal((await knowledge.get(saved.path))?.id, saved.noteId);
+  assert.equal((await knowledge.folders()).find((f) => f.id === a.id)?.sort_order, -2);
+  await assert.rejects(knowledge.createFolder({ name: "Java" })); await assert.rejects(knowledge.deleteFolder(b.id), { code: "FOLDER_NOT_EMPTY" });
+  const empty = await knowledge.createFolder({ name: "Empty" }); await knowledge.deleteFolder(empty.id); assert.equal(await knowledge.resolveFolder(empty.id), null);
+}));
+test("P06 improvement is read-only until apply, preserves exact source and deduplicates commit", () => run(async () => {
+  const input = { title: "Original", body: "Raw\r\n  Keep spaces.\n", folderId: ROOT_FOLDER_ID }, key = randomUUID();
+  const before = (await knowledge.list()).length, beforeCalls = calls;
+  const proposal = await improvements.propose(input, key, provider); assert.equal((await knowledge.list()).length, before);
+  assert.equal((await improvements.propose(input, key, provider)).id, proposal.id); assert.equal(calls, beforeCalls + 1);
+  const applyKey = randomUUID(), changes = { title: "Owner reviewed", body: "Edited proposal\n", importance: 4 };
+  const a = await improvements.decide(proposal.id, "apply", changes, applyKey), b = await improvements.decide(proposal.id, "apply", changes, applyKey); assert.deepEqual(a, b);
+  const detail = await knowledge.detail(a.receipt!.noteId); assert.equal(detail.note.body, changes.body); assert.equal(detail.note.provenance, "ai_improved"); assert.equal(detail.sources[0].body, input.body); assert.equal(detail.processing.length, 3);
+  await assert.rejects(improvements.decide(proposal.id, "apply", { ...changes, body: "overwrite" }, applyKey));
+  const rejected = await improvements.propose(input, randomUUID(), provider); await improvements.decide(rejected.id, "reject", undefined, randomUUID()); await assert.rejects(improvements.decide(rejected.id, "apply", changes, randomUUID()));
+  const original = await improvements.propose(input, randomUUID(), provider); const receipt = await improvements.decide(original.id, "original", changes, randomUUID()); assert.equal((await knowledge.get(receipt.receipt!.noteId))?.body, input.body);
+}));
+test("P06 competing proposal cannot overwrite newer note; historical restore restores linked sources", () => run(async () => {
+  const first = await knowledge.execute({ action: "create", title: "Original", body: "Source A", idempotencyKey: randomUUID() });
+  const proposal = await improvements.propose({ title: "Original", body: "Source A", noteId: first.noteId, expectedVersion: 1 }, randomUUID(), provider);
+  await knowledge.execute({ action: "edit", noteId: first.noteId, expectedVersion: 1, title: "Newer", body: "Source B", idempotencyKey: randomUUID() });
+  await assert.rejects(improvements.decide(proposal.id, "apply", { title: "Bad", body: "Overwrite" }, randomUUID()), { code: "VERSION_CONFLICT" });
+  assert.equal((await knowledge.get(first.noteId))?.body, "Source B");
+  const restored = await knowledge.execute({ action: "restore", noteId: first.noteId, expectedVersion: 2, targetVersion: 1, idempotencyKey: randomUUID() });
+  const detail = await knowledge.detail(first.noteId); assert.equal(detail.note.body, "Source A"); assert.equal(detail.sources.length, 1); assert.equal(detail.sources[0].body, "Source A");
+  await knowledge.execute({ action: "undo", operationId: restored.operationId, idempotencyKey: randomUUID() }); assert.equal((await knowledge.get(first.noteId))?.body, "Source B");
+}));
+test("P06 Markdown imports target exact selected folder and preserve bytes", () => run(async () => {
+  const folder = await knowledge.createFolder({ name: "OS" }), body = "# Kernel\r\n\n  keep this spacing\n", key = randomUUID();
+  const result = await importMarkdown(knowledge, new AttachmentService(storage.pool, scratch), Buffer.from(body), "kernel.md", key, folder.id);
+  const note = await knowledge.get(result.receipts[0].noteId); assert.equal(note?.folder_id, folder.id); assert.equal(note?.path, "os/kernel.md"); assert.equal(note?.body, body);
+  const replay = await importMarkdown(knowledge, new AttachmentService(storage.pool, scratch), Buffer.from(body), "kernel.md", key, folder.id); assert.deepEqual(replay, result);
+}));

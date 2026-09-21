@@ -1,4 +1,14 @@
-# AI Personal Knowledge Base — Master Build Prompt
+# Legacy requirements — retained for historical context
+
+Status updated: 2026-09-18.
+
+Read general.txt for the current authoritative product/architecture specification and TODO.md for implementation status and the next task. The original prompt below is preserved as history; conflicting instructions in it no longer govern implementation.
+
+The owner has now specified ONE private owner per self-hosted installation, OpenRouter for all AI, folder + capture with optional improvement, and automatic saving of AI-generated answers from folder slash commands. The selected target is PostgreSQL + pgvector with complete Markdown notes and an evidence-linked relational knowledge graph. Legacy Ollama-first, Markdown-file authority, multi-user ambitions and blanket rejection of saving generated answers are superseded.
+
+---
+
+# AI Personal Knowledge Base — Original Master Build Prompt
 
 ## 1. Project
 

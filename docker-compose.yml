@@ -1,22 +1,102 @@
-version: '3.8'
-
+name: myai
 services:
-  myai:
+  db:
+    image: pgvector/pgvector:0.8.2-pg17-bookworm@sha256:feb68f4f15446397d8cac7f4fe48fe4586de83160d1fc48b46283312d1a33966
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-myai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-myai}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  migrate:
+    image: myai-maintenance:${MYAI_IMAGE_TAG:-local}
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: myai-knowledge-base
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
+      target: maintenance
     environment:
-      - NODE_ENV=production
-      - VAULT_PATH=/app/vault
-      - DATABASE_PATH=/app/data/myai.db
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=llama3.1
+      DATABASE_URL: postgresql://${POSTGRES_USER:-myai}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-myai}
+      DATA_DIR: /app/data/attachments
     volumes:
-      - ./vault:/app/vault
-      - ./data:/app/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - attachments:/app/data/attachments
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+  myai:
+    image: myai-web:${MYAI_IMAGE_TAG:-local}
+    init: true
+    stop_grace_period: 30s
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    # Local by default. Put an HTTPS reverse proxy in front for remote access.
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-myai}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-myai}
+      DATA_DIR: /app/data/attachments
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set a random BETTER_AUTH_SECRET in .env}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_CHAT_MODEL: ${OPENROUTER_CHAT_MODEL:-}
+      OPENROUTER_STRUCTURED_MODEL: ${OPENROUTER_STRUCTURED_MODEL:-}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      OPENROUTER_RERANK_MODEL: ${OPENROUTER_RERANK_MODEL:-cohere/rerank-v3.5}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      AI_INDEXING_ENABLED: ${AI_INDEXING_ENABLED:-false}
+      RERANK_ENABLED: ${RERANK_ENABLED:-false}
+      GRAPH_EXPANSION_ENABLED: ${GRAPH_EXPANSION_ENABLED:-false}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-4096}
+      AI_DAILY_REQUEST_LIMIT: ${AI_DAILY_REQUEST_LIMIT:-200}
+      AI_DAILY_TOKEN_BUDGET: ${AI_DAILY_TOKEN_BUDGET:-200000}
+    volumes:
+      - attachments:/app/data/attachments
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  worker:
+    image: myai-maintenance:${MYAI_IMAGE_TAG:-local}
+    init: true
+    build:
+      context: .
+      target: maintenance
+    command: ["node", "--import", "tsx", "scripts/worker.ts"]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-myai}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-myai}
+      DATABASE_POOL_SIZE: 7
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_CHAT_MODEL: ${OPENROUTER_CHAT_MODEL:-}
+      OPENROUTER_STRUCTURED_MODEL: ${OPENROUTER_STRUCTURED_MODEL:-}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      OPENROUTER_RERANK_MODEL: ${OPENROUTER_RERANK_MODEL:-cohere/rerank-v3.5}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      AI_INDEXING_ENABLED: ${AI_INDEXING_ENABLED:-false}
+      RERANK_ENABLED: ${RERANK_ENABLED:-false}
+      GRAPH_EXPANSION_ENABLED: ${GRAPH_EXPANSION_ENABLED:-false}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-4096}
+      AI_DAILY_REQUEST_LIMIT: ${AI_DAILY_REQUEST_LIMIT:-200}
+      AI_DAILY_TOKEN_BUDGET: ${AI_DAILY_TOKEN_BUDGET:-200000}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "--import", "tsx", "scripts/indexing.ts", "health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  postgres:
+  attachments:

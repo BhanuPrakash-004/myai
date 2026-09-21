@@ -1,0 +1,10 @@
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { knowledge } from "@/lib/storage/knowledge";
+import { privateRoute,jsonBody } from "@/lib/http";
+import { ok } from "@/lib/api";
+export const runtime="nodejs";
+export const GET=privateRoute(async()=>ok({folders:await knowledge().folders()}));
+export const POST=privateRoute(async(r:NextRequest)=>ok({folder:await knowledge().createFolder(z.object({name:z.string(),parentId:z.guid().optional()}).strict().parse(await jsonBody(r)))}));
+export const PATCH=privateRoute(async(r:NextRequest)=>ok({folder:await knowledge().moveFolder(z.object({id:z.guid(),name:z.string(),parentId:z.guid(),sortOrder:z.number().int().optional(),aliases:z.array(z.string()).max(30).optional()}).strict().parse(await jsonBody(r)))}));
+export const DELETE=privateRoute(async(r:NextRequest)=>{await knowledge().deleteFolder(z.object({id:z.guid()}).strict().parse(await jsonBody(r)).id);return ok({deleted:true});});

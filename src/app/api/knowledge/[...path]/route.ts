@@ -1,150 +1,42 @@
-import { NextRequest, NextResponse } from "next/server";
-import { readKnowledge, writeKnowledge, deleteKnowledge, knowledgeExists, moveKnowledge } from "@/lib/vault";
-import { getDb } from "@/lib/db";
-import { recordInteraction } from "@/lib/memory/tracker";
-
-interface RouteContext {
-  params: Promise<{ path: string[] }>;
-}
-
-export async function GET(req: NextRequest, context: RouteContext) {
-  try {
-    const { path: pathSegments } = await context.params;
-    const relPath = pathSegments.join("/");
-
-    if (!knowledgeExists(relPath)) {
-      return NextResponse.json({ error: "Knowledge note not found" }, { status: 404 });
-    }
-
-    const content = readKnowledge(relPath);
-    const db = getDb();
-    const memory = db.prepare("SELECT * FROM memories WHERE file_path = ?").get(relPath);
-
-    if (memory && (memory as any).id) {
-      recordInteraction((memory as any).id, "viewed");
-    }
-
-    return NextResponse.json({
-      path: relPath,
-      content,
-      metadata: memory || null,
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function PUT(req: NextRequest, context: RouteContext) {
-  try {
-    const { path: pathSegments } = await context.params;
-    const relPath = pathSegments.join("/");
-    const body = await req.json();
-    const { content, importance, topic, subcategory } = body;
-
-    if (typeof content !== "string") {
-      return NextResponse.json({ error: "Content must be a string" }, { status: 400 });
-    }
-
-    writeKnowledge(relPath, content);
-    const db = getDb();
-    const now = new Date().toISOString();
-
-    const titleMatch = content.match(/^#\s+(.+)$/m);
-    const title = titleMatch ? titleMatch[1].trim() : relPath;
-
-    const existing = db.prepare("SELECT id FROM memories WHERE file_path = ?").get(relPath);
-    if (existing) {
-      db.prepare(`
-        UPDATE memories
-        SET updated_at = ?,
-            content_preview = ?,
-            title = COALESCE(?, title),
-            importance = COALESCE(?, importance),
-            topic = COALESCE(?, topic),
-            subcategory = COALESCE(?, subcategory)
-        WHERE file_path = ?
-      `).run(
-        now,
-        content.slice(0, 300),
-        title,
-        importance || null,
-        topic || null,
-        subcategory || null,
-        relPath
-      );
-    }
-
-    // Refresh FTS
-    try {
-      db.prepare("DELETE FROM memories_fts WHERE file_path = ?").run(relPath);
-      db.prepare(`
-        INSERT INTO memories_fts (title, content, topic, subcategory, file_path)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(title, content, topic || "General", subcategory || "", relPath);
-    } catch {
-      // ignore
-    }
-
-    return NextResponse.json({ success: true, message: "Saved successfully" });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function DELETE(req: NextRequest, context: RouteContext) {
-  try {
-    const { path: pathSegments } = await context.params;
-    const relPath = pathSegments.join("/");
-
-    const deleted = deleteKnowledge(relPath);
-    if (!deleted) {
-      return NextResponse.json({ error: "File not found" }, { status: 404 });
-    }
-
-    const db = getDb();
-    db.prepare("DELETE FROM memories WHERE file_path = ?").run(relPath);
-    try {
-      db.prepare("DELETE FROM memories_fts WHERE file_path = ?").run(relPath);
-    } catch {
-      // ignore
-    }
-
-    return NextResponse.json({ success: true, message: "Deleted successfully" });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function POST(req: NextRequest, context: RouteContext) {
-  // Move or rename
-  try {
-    const { path: pathSegments } = await context.params;
-    const oldPath = pathSegments.join("/");
-    const body = await req.json();
-    const { newPath } = body;
-
-    if (!newPath) {
-      return NextResponse.json({ error: "newPath is required" }, { status: 400 });
-    }
-
-    moveKnowledge(oldPath, newPath);
-
-    const db = getDb();
-    const now = new Date().toISOString();
-    db.prepare("UPDATE memories SET file_path = ?, updated_at = ? WHERE file_path = ?").run(
-      newPath,
-      now,
-      oldPath
-    );
-
-    try {
-      db.prepare("UPDATE memories_fts SET file_path = ? WHERE file_path = ?").run(newPath, oldPath);
-    } catch {
-      // ignore
-    }
-
-    return NextResponse.json({ success: true, newPath });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { knowledge,presentNote } from "@/lib/storage/knowledge";
+import { transaction } from "@/lib/storage/client";
+import { DomainError } from "@/lib/storage/access";
+import { privateRoute,jsonBody,operationKey } from "@/lib/http";
+import { ok } from "@/lib/api";
+export const runtime="nodejs";
+export const dynamic="force-dynamic";
+type Context={params:Promise<{path:string[]}>};
+async function target(c:Context){return (await c.params).path.join("/");}
+export const GET=privateRoute(async(_r:NextRequest,c:Context)=>{
+ const note=await knowledge().get(await target(c),true);
+ if(!note) throw new DomainError("NOT_FOUND","Note not found.",404);
+ return ok({path:note.path,content:note.body,metadata:presentNote(note)});
+});
+export const PUT=privateRoute(async(r:NextRequest,c:Context)=>{
+ const service=knowledge(),path=await target(c),input=z.object({content:z.string().max(1000000),expectedVersion:z.number().int().positive().optional(),title:z.string().min(1).max(200).optional(),importance:z.number().int().min(1).max(5).optional()}).strict().parse(await jsonBody(r));
+ const existing=await service.get(path,true),key=operationKey(r);
+ const receipt=existing?await service.execute({action:"edit",idempotencyKey:key,noteId:existing.id,expectedVersion:z.number().int().positive().parse(input.expectedVersion),title:input.title??existing.title,body:input.content,importance:input.importance??existing.importance,metadata:existing.metadata})
+ :await transaction(service.pool,async client=>{
+  const folderId=await service.ensureFolderPath(path.split("/").slice(0,-1).join("/"),client);
+  return service.executeInTransaction(client,{action:"create",idempotencyKey:key,folderId,path,title:input.title??input.content.match(/^#\s+(.+)$/m)?.[1]?.slice(0,200)??path.split("/").pop()!.slice(0,-3),body:input.content,importance:input.importance});
+ });
+ return ok({receipt,path:receipt.path,metadata:presentNote((await service.get(receipt.noteId,true))!)});
+});
+export const DELETE=privateRoute(async(r:NextRequest,c:Context)=>{
+ const service=knowledge(),note=await service.get(await target(c),true);
+ if(!note) throw new DomainError("NOT_FOUND","Note not found.",404);
+ const input=z.object({expectedVersion:z.number().int().positive()}).strict().parse(await jsonBody(r));
+ return ok({receipt:await service.execute({action:"lifecycle",idempotencyKey:operationKey(r),noteId:note.id,expectedVersion:input.expectedVersion,lifecycle:"trashed"})});
+});
+export const POST=privateRoute(async(r:NextRequest,c:Context)=>{
+ const service=knowledge(),note=await service.get(await target(c),true);
+ if(!note) throw new DomainError("NOT_FOUND","Note not found.",404);
+ const input=z.object({newPath:z.string().min(1).max(500),expectedVersion:z.number().int().positive()}).strict().parse(await jsonBody(r));
+ const receipt=await transaction(service.pool,async client=>{
+  const folderId=await service.ensureFolderPath(input.newPath.split("/").slice(0,-1).join("/"),client);
+  return service.executeInTransaction(client,{action:"move",idempotencyKey:operationKey(r),noteId:note.id,expectedVersion:input.expectedVersion,folderId,path:input.newPath});
+ });
+ return ok({newPath:receipt.path,receipt});
+});

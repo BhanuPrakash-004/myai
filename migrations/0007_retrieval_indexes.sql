@@ -1,0 +1,2 @@
+CREATE INDEX "chunks_note_current" ON "chunks" USING btree ("note_id","note_version","chunker_version");--> statement-breakpoint
+CREATE INDEX "graph_evidence_chunk" ON "graph_evidence" USING btree ("chunk_id");

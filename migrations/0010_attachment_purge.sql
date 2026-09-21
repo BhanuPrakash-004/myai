@@ -1,0 +1,2 @@
+ALTER TABLE "attachments" DROP CONSTRAINT "attachment_state";--> statement-breakpoint
+ALTER TABLE "attachments" ADD CONSTRAINT "attachment_state" CHECK (state IN ('staged', 'ready', 'failed', 'purged'));

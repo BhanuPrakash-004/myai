@@ -1,32 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { startReviewSession, logReviewOutcome, ReviewSessionConfig } from "@/lib/review/engine";
-
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const mode = (searchParams.get("mode") || "quick") as ReviewSessionConfig["mode"];
-    const topic = searchParams.get("topic") || undefined;
-    const limit = parseInt(searchParams.get("limit") || "8", 10);
-
-    const session = startReviewSession({ mode, topic, limit });
-    return NextResponse.json(session);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { sessionId, memoryId, remembered } = body;
-
-    if (!sessionId || !memoryId) {
-      return NextResponse.json({ error: "sessionId and memoryId are required" }, { status: 400 });
-    }
-
-    logReviewOutcome(sessionId, memoryId, Boolean(remembered));
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { StudyService } from "@/lib/storage/study";
+import { getStorage } from "@/lib/storage/client";
+import { privateRoute,jsonBody } from "@/lib/http";
+import { ok } from "@/lib/api";
+export const runtime="nodejs";
+export const POST=privateRoute(async(r:NextRequest)=>{
+ const input=await jsonBody(r),study=new StudyService(getStorage().pool);
+ if(input.action==="start"){
+  const data=z.object({action:z.literal("start"),mode:z.string().default("quick"),topic:z.string().max(300).optional(),limit:z.number().int().min(1).max(20).default(8)}).strict().parse(input);
+  return ok(await study.startReview(data.mode,data.topic,data.limit));
+ }
+ return ok(await study.reviewAnswer(input));
+});
+export const GET=privateRoute(async()=>ok({message:"Start a review with POST action=start."}));

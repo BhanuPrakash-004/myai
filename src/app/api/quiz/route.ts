@@ -1,31 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
-import { generateQuiz, evaluateQuizAnswer } from "@/lib/quiz/generator";
-
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const topic = searchParams.get("topic") || undefined;
-    const count = parseInt(searchParams.get("count") || "5", 10);
-
-    const quiz = await generateQuiz(topic, count);
-    return NextResponse.json(quiz);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { sessionId, question, answer } = body;
-
-    if (!sessionId || !question || answer === undefined) {
-      return NextResponse.json({ error: "sessionId, question, and answer are required" }, { status: 400 });
-    }
-
-    const evaluation = await evaluateQuizAnswer(sessionId, question, answer);
-    return NextResponse.json(evaluation);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { StudyService } from "@/lib/storage/study";
+import { getStorage } from "@/lib/storage/client";
+import { getAIProvider } from "@/lib/ai";
+import { privateRoute,jsonBody } from "@/lib/http";
+import { ok } from "@/lib/api";
+export const runtime="nodejs";
+export const POST=privateRoute(async(r:NextRequest)=>{
+ const input=await jsonBody(r),study=new StudyService(getStorage().pool);
+ if(input.action==="generate"){
+  const data=z.object({action:z.literal("generate"),topic:z.string().max(300).optional(),count:z.number().int().min(1).max(10).default(5)}).strict().parse(input);
+  return ok(await study.generateQuiz(await getAIProvider(),data.topic,data.count,r.signal));
+ }
+ return ok(await study.quizAnswer(input));
+});
+export const GET=privateRoute(async()=>ok({message:"Generate a quiz with POST action=generate."}));

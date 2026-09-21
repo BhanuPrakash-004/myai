@@ -6,3 +6,14 @@ README.md
 data
 vault
 *.log
+.env
+.env.*
+!.env.example
+tests
+test-results
+playwright-report
+coverage
+backups
+*.tsbuildinfo
+.agents
+.codex

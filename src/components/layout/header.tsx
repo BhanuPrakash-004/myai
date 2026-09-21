@@ -2,105 +2,101 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Menu, X, PlusCircle, Search, BrainCircuit } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { usePathname } from "next/navigation";
+import { Menu, X, Search, PenLine } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SessionControls } from "./session-controls";
+
+const CRUMBS: Record<string, [string, string]> = {
+  "/chat": ["Capture", "AI Chat"],
+  "/knowledge": ["Library", "Knowledge"],
+  "/search": ["Library", "Search"],
+  "/graph": ["Library", "Graph"],
+  "/evidence": ["Library", "Evidence"],
+  "/leetcode": ["Library", "LeetCode"],
+  "/review": ["Practice", "Review"],
+  "/quiz": ["Practice", "Quiz"],
+  "/dashboard": ["System", "Dashboard"],
+  "/settings": ["System", "Settings"],
+};
+
+const MOBILE_LINKS = [
+  ["AI Chat", "/chat"],
+  ["Knowledge", "/knowledge"],
+  ["Search", "/search"],
+  ["Graph", "/graph"],
+  ["Review", "/review"],
+  ["Quiz", "/quiz"],
+  ["LeetCode", "/leetcode"],
+  ["Dashboard", "/dashboard"],
+  ["Settings", "/settings"],
+] as const;
 
 export function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+  const base = "/" + (pathname.split("/")[1] || "chat");
+  const [section, page] = CRUMBS[base] || ["MyAI", base.replace("/", "")];
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-zinc-800/80 bg-[#0d1117]/80 px-4 backdrop-blur-md">
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-20 flex h-[57px] items-center justify-between border-b border-line bg-ink-0/90 px-4 sm:px-6 backdrop-blur-md shrink-0">
+      <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
-          className="md:hidden flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-700 text-zinc-300"
+          className="md:hidden flex h-8 w-8 items-center justify-center rounded-md border border-line-strong text-paper-dim"
+          aria-label="Menu"
+          aria-expanded={mobileOpen}
         >
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
         </button>
-        <div className="hidden sm:flex items-center gap-2 text-xs text-zinc-400">
-          <span className="rounded-md bg-zinc-800/80 px-2 py-1 font-mono text-[11px] text-zinc-300 border border-zinc-700/60">
-            Markdown Vault
+        {/* mobile wordmark */}
+        <Link href="/chat" className="md:hidden flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-signal font-display text-[13px] font-semibold text-signal-ink">
+            M
           </span>
-          <span>•</span>
-          <span className="text-zinc-400">Natural conversation to structured knowledge</span>
-        </div>
+          <span className="font-display text-[15px] text-paper">MyAI</span>
+        </Link>
+        {/* desktop breadcrumb */}
+        <nav className="hidden md:flex items-center gap-2 font-mono text-[11.5px] uppercase tracking-[0.12em] min-w-0">
+          <span className="text-mist">{section}</span>
+          <span className="text-line-strong">/</span>
+          <span className="text-paper truncate">{page}</span>
+        </nav>
       </div>
 
       <div className="flex items-center gap-2">
-        <Link href="/search">
-          <Button variant="outline" size="sm" className="h-8 gap-2 text-xs text-zinc-400 hover:text-white">
-            <Search className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Search memories...</span>
-          </Button>
+        <SessionControls />
+        <Link href="/search" aria-label="Search" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
+            <span className="hidden sm:inline">Search</span>
+            <kbd className="hidden sm:inline rounded border border-line-strong px-1 font-mono text-[10px] text-mist">
+              /
+            </kbd>
         </Link>
-        <Link href="/chat">
-          <Button size="sm" className="h-8 gap-1.5 text-xs bg-blue-600 hover:bg-blue-700">
-            <PlusCircle className="h-3.5 w-3.5" />
-            <span>New Chat</span>
-          </Button>
+        <Link href="/knowledge?capture=1" className={buttonVariants({ size: "sm" })} onClick={() => window.dispatchEvent(new Event("myai:new-note"))}>
+            <PenLine className="h-3.5 w-3.5" strokeWidth={1.75} />
+            <span>New entry</span>
         </Link>
       </div>
 
-      {/* Mobile Drawer */}
+      {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 top-14 z-50 bg-[#0d1117]/95 p-4 md:hidden border-t border-zinc-800 flex flex-col space-y-2">
-          <Link
-            href="/chat"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 p-3 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800"
-          >
-            <BrainCircuit className="h-4 w-4 text-blue-400" /> AI Chat
-          </Link>
-          <Link
-            href="/knowledge"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 p-3 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800"
-          >
-            Knowledge Browser
-          </Link>
-          <Link
-            href="/search"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 p-3 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800"
-          >
-            Search
-          </Link>
-          <Link
-            href="/review"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 p-3 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800"
-          >
-            Study & Review
-          </Link>
-          <Link
-            href="/quiz"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 p-3 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800"
-          >
-            AI Quiz
-          </Link>
-          <Link
-            href="/leetcode"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 p-3 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800"
-          >
-            LeetCode Notes
-          </Link>
-          <Link
-            href="/dashboard"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 p-3 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800"
-          >
-            Dashboard
-          </Link>
-          <Link
-            href="/settings"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 p-3 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800"
-          >
-            Settings
-          </Link>
-        </div>
+        <Dialog open onOpenChange={setMobileOpen}><DialogHeader><DialogTitle>Navigation</DialogTitle></DialogHeader>
+          <nav aria-label="Mobile navigation" className="panel p-2">
+            {MOBILE_LINKS.map(([label, href]) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center justify-between rounded-md px-3 py-2.5 text-sm text-paper-dim hover:bg-ink-2 hover:text-paper"
+              >
+                <span>{label}</span>
+                <span className="font-mono text-[11px] text-mist">{href}</span>
+              </Link>
+            ))}
+          </nav><button className="mt-3 p-2" onClick={() => setMobileOpen(false)}>Close menu</button>
+        </Dialog>
       )}
     </header>
   );

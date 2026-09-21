@@ -1,0 +1,27 @@
+name: Optional live OpenRouter compatibility
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: live-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: docker compose -f compose.test.yml up -d --wait
+      - run: node --import tsx scripts/ai-release-check.ts --live
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_CHAT_MODEL: ${{ vars.OPENROUTER_CHAT_MODEL }}
+          OPENROUTER_STRUCTURED_MODEL: ${{ vars.OPENROUTER_STRUCTURED_MODEL }}
+          OPENROUTER_EMBEDDING_MODEL: ${{ vars.OPENROUTER_EMBEDDING_MODEL }}
+          OPENROUTER_RERANK_MODEL: ${{ vars.OPENROUTER_RERANK_MODEL }}
+      - if: always()
+        run: docker compose -f compose.test.yml down --volumes

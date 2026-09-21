@@ -1,0 +1,454 @@
+MYAI — PERSONAL SECOND BRAIN
+Authoritative product and architecture specification
+Updated: 2026-09-21
+Status: P01–P11 implemented including live four-task compatibility (P05.11). P12 deployment, hardening, CI and documentation are implemented, with local release verification recorded in docs/P12-RELEASE.md. Public-host acceptance, the owner's license choice and broader live UI/quality acceptance remain release gates; see TODO.md. No perfect-retrieval or zero-hallucination claim is made.
+
+01. DOCUMENT AUTHORITY AND SCOPE
+
+Read this file for the product and architecture. Read TODO.md for verified current state, defects, implementation order, acceptance checks, and the next task. Read AGENTS.md and the installed Next.js guides before changing framework code.
+
+This specification implements the owner's latest decisions and supersedes conflicting requirements in info.txt, the legacy TODO, and the 2026-09-17 architecture review:
+- ONE owner per installation. Other people host their own installations.
+- OpenRouter handles generation, improvement, structured extraction, embeddings, and reranking.
+- A folder slash command explicitly requests generation and automatic saving, including AI-generated answers.
+- Direct entry offers optional AI improvement; declining preserves the supplied text.
+- Folder organization and an evidence-linked knowledge graph are core features.
+- PostgreSQL with pgvector and relational graph tables is the selected target authority. SQLite/Turso/Qdrant are legacy components to migrate, not simultaneous target backends.
+
+TODO.md is the completion ledger. P01–P04 implement the storage and private-access foundation, not the whole target product. All application routes now use PostgreSQL. Later target behavior described here remains pending unless explicitly checked in TODO.md.
+
+02. PURPOSE
+
+MyAI is an open-source, self-hosted, single-user web application for creating, capturing, improving, organizing, connecting, retrieving, and revising personal knowledge.
+
+The owner can add information directly, ask AI to create information, improve an existing note, and ask questions grounded in their library. Knowledge is readable Markdown plus structured, source-linked relationships for retrieval and learning.
+
+Subjects are unrestricted: Java, DSA, system design, resumes, interviews, college subjects, exams, projects, language learning, and other interests. Developer examples are useful defaults, not hardcoded limits.
+
+The normal experience is a private website accessible from desktop and phone: a VS Code-like knowledge workspace with a folder explorer, editable Markdown documents/tabs and an adjacent AI chat/tool panel. As with Codex/Claude Code inside an editor, chat can read selected notes and propose or apply explicit content changes through structured tools. This is a knowledge editor, not a general terminal or arbitrary code-execution agent. An actual VS Code extension is not required for the first release.
+
+Top-level topics such as /java, /dsa and /os and nested topics such as /java/syntax are owner-created folders. No subject taxonomy is hardcoded. Notes look and behave like readable documents, while PostgreSQL is their canonical storage and Markdown exports/mirrors provide ordinary files.
+
+The application has no subscription or paid product tier. Self-hosting and OpenRouter usage can still have external costs; do not promise free inference or hosting.
+
+Core loop:
+  Add / Generate / Improve
+    -> Save complete versioned knowledge in the selected folder
+    -> Index it and connect supported concepts
+    -> Retrieve through folders, search, graph, or chat
+    -> Revise and practice
+    -> Record recall evidence and schedule review
+
+03. NON-NEGOTIABLE PRODUCT RULES
+
+R01. One owner per installation, with private sign-in; no public signup, shared workspaces, organizations, billing, or subscription product.
+R02. Explicit folder selection or slash scope takes precedence over AI classification.
+R03. Save ONE canonical note. Folder membership, keyword search, vectors and graph links are projections/references, not inconsistent content copies.
+R04. Plain save/edit/read/keyword search work without a key or functioning AI service.
+R05. Declining improvement performs no AI rewrite, cleanup, summarization or title invention.
+R06. Successful folder-prefixed generation automatically saves its complete finalized answer and displays its destination and Undo.
+R07. Ask/RAG/revision/quiz do not silently create knowledge; offer Save answer when appropriate.
+R08. User-written, imported, AI-generated and AI-improved content have distinct provenance. Saved does not mean factually verified.
+R09. Preserve sources and versions. A similar topic never authorizes overwriting existing notes.
+R10. Committed data survives refresh, restart, upgrade and container recreation with documented volumes.
+R11. A saved note is immediately visible and keyword-searchable; background index progress is separate.
+R12. Delete means recoverable trash by default. Permanent/bulk destructive operations need explicit confirmation.
+R13. UI, chat, import and AI tools all call one authenticated domain write service.
+R14. Private APIs and downloads require the owner session. Single-user does not mean public.
+R15. Markdown portability and complete backup/restore are required.
+R16. Retrieval uses the latest active saved version. Editing, moving, archiving or trashing data must invalidate or rescope derived graph/vector results; old jobs cannot publish a newer version's state.
+R17. Accuracy is measured against source evidence. Never promise zero hallucinations or universally perfect information; abstain on missing evidence, expose conflicts, and distinguish model-generated claims from supplied facts.
+
+04. FOLDER EXPLORER AND WORKSPACE
+
+Use a persistent left sidebar containing an expandable folder/note tree, library search, and navigation to Chat, Study, Graph and Settings. The main area shows a note, folder overview or conversation. An optional right AI panel works with the selected note/folder. Mobile uses a drawer and full-width panels.
+
+Every folder has an adjacent + button accessible on hover, keyboard focus and touch, labelled with the folder name. It opens Add note, Add subfolder and Import; Add note is primary. Root + creates top-level folders or unfiled notes.
+
+Support nested and empty folders, rename/move/order/trash/restore and counts. Use stable folder IDs. Reject cycles, moves under self and duplicate normalized sibling names/slugs. Folder moves update descendants/aliases consistently. Prefer explicit move controls before adding drag-and-drop.
+
+The chat tool surface is a typed allowlist: list folders, read note/version, search evidence, create note, propose/apply a targeted edit, move, and trash/restore. Tools use stable IDs, explicit folder scope, operation IDs and expectedVersion. Show affected documents and changes in the workspace. Retrieved text cannot grant write permissions, choose arbitrary disk paths or execute shell commands. A multi-note operation needs a reviewable change set and conflict handling; no hidden changes to unrelated notes.
+
+One note has one primary folder; tags and concept/related-note links provide other associations without duplication. A default Inbox holds explicitly captured unfiled data, not every ordinary conversation.
+
+Selected folder scope includes descendants by default, with an exact-folder option. Show scope beside the composer. Stable note IDs drive URLs and citations. Legacy path URLs redirect after migration, so renames do not break links.
+
+05. DIRECT ADD: + -> OPTIONAL IMPROVEMENT -> SAVE
+
+1. Click + beside Java and choose Add note.
+2. Open an editor bound to Java; enter title and text/Markdown/code.
+3. On Save, ask "Improve with AI before saving?" with "No, save as written" and "Yes, improve".
+4. No: commit the supplied body unchanged in Java without a generation call or another save question. A missing title gets a deterministic neutral title such as Untitled note.
+5. Yes: preserve the original draft, request improvement through OpenRouter, and show original/proposed content and diff. The owner can edit it, choose Use improved version and save, or Save original.
+6. Commit the finalized note and show its receipt/tree entry immediately. Show indexing separately.
+
+Improvement defaults to clearer wording, structure and formatting while preserving meaning, code and factual details. Extra examples/explanations or factual corrections are a separately labelled expansion request; show changes in the proposal rather than silently replacing numbers, assumptions or personal statements.
+
+"No" means no content transformation, not discarding the note. Background embeddings/concept extraction can still run when AI indexing is enabled; they cannot rewrite the note. Explain that these send relevant text to OpenRouter. A privacy setting disables AI indexing while keeping manual notes and keyword search.
+
+Preserve exact submitted text for direct entry and original bytes for uploads. Failed/cancelled improvement retains the draft and offers retry/save original. Drafts are not searchable knowledge. Protect against accidental navigation and design recoverable drafts without casually storing private text in shared browser storage.
+
+06. CHAT MODES AND SLASH FOLDERS
+
+Expose four modes: Ask, Generate & Save, Save as written, Improve & Save. Send a server-validated operation enum; the model cannot grant itself write permission.
+
+Ordinary chat defaults to Ask. Selecting a folder changes retrieval scope, not save permission. Ask answers from saved material when relevant, labels general additions, and offers Save answer.
+
+A leading folder command selects that folder and defaults to Generate & Save unless the owner explicitly selected another visible mode for that message. Show action and destination before Send.
+
+Examples:
+  /java class explanation
+    -> explain Java classes, stream the answer, automatically save that SAME finalized Markdown under Java.
+  /dsa explain binary search boundaries with Java examples
+    -> retrieve relevant DSA notes when useful, generate, and automatically save under DSA.
+  /java [pasted data] in Generate & Save
+    -> use the supplied material to generate a note; preserve original input as a source; save labelled AI-generated output.
+  /java HashMap is not thread safe, with Save as written selected
+    -> preserve the supplied data exactly under Java without generation.
+  /java [rough notes], with Improve & Save selected
+    -> show an improvement proposal/diff, then save the owner's approved version.
+  /java what have I saved about interfaces?, with Ask selected
+    -> answer with citations within scope; create no knowledge note.
+
+Slash generation already authorizes saving its result. Do not add the direct-entry improvement question or a second save confirmation to that path. A generation question ending in "?" must still save when Generate & Save was explicitly requested.
+
+Typing / shows live folder suggestions. /java alone selects scope and waits for content: no model call or write. Nested paths use /java/collections; spaces get stable slugs such as /system-design, with human-readable names in the picker. Resolve case/aliases deterministically. Unknown folders offer inline Create folder before sending; ambiguous aliases require selection. Rename preserves safe aliases/redirects.
+
+Document migration of legacy /knowledge and /imp. Importance is metadata on one note, not a second Important copy. Reserve command names to prevent collisions. Resolve IDs server-side; never execute LLM-selected filesystem paths.
+
+Validate complete response and finish status before saving. Cancelled, failed or truncated responses remain recoverable partial chat messages, not finalized notes. Successful generation persists final message, canonical note, provenance, operation result and indexing job before emitting Saved. Do not make a second model call that stores different content from the answer shown.
+
+Track durable operation IDs for reconnect/recovery. Initial generation may stream inside a request; process failure leaves an interrupted operation with preserved input and an idempotent retry. External model calls can run again after a failure; guarantee deduplicated database effects rather than claiming exactly-once external inference.
+
+07. MODIFY, DEDUPLICATE, VERSION, UNDO
+
+Manual edits carry expectedVersion and create immutable snapshots. Stale edits receive a conflict/diff instead of last-writer-wins. One person using two tabs still needs concurrency protection.
+
+Improve selected note / Modify with instructions target a stable note ID and version. Preview before Apply; commit one new version. AI cannot alter unrelated notes. Undo creates a restoring version or trashes a new note rather than erasing history.
+
+Deduplication:
+- Same client operation ID returns its prior outcome.
+- Exact duplicate body in the same destination can return Already saved and the existing note.
+- Similar content or topic proposes a relation/merge; never overwrites by similarity alone.
+- Explicit Add to this note appends facts or applies a reviewed section patch.
+- Merging distinct notes requires preview, preserved source links, recoverable originals and redirected backlinks.
+- IGNORE and read-only intents are terminal non-mutating engine outcomes.
+
+Separate provenance from other state:
+  provenance: user_written / imported / ai_generated / ai_improved / migrated_unknown
+  review: unreviewed / owner_reviewed
+  lifecycle: active / archived / trashed
+  index: pending / processing / ready / failed / stale
+
+Saved AI notes are readable/searchable even when unreviewed, and answers/study show their origin. User review or model confidence is not proof of factual correctness.
+
+08. SELECTED TARGET ARCHITECTURE
+
+Retain a TypeScript modular monolith:
+  Browser -> authenticated Next.js route -> validated domain service -> repository -> PostgreSQL
+                                             |                       |
+                                             -> OpenRouter client    -> transactional enqueue
+                                                                            -> worker -> indexes/graph/files
+
+Libraries/services (storage/auth and P05 AI/worker runtime implemented; projection handlers follow TODO.md):
+- Existing Next.js App Router, React, Tailwind, shared accessible UI.
+- Existing react-markdown/remark-gfm/code highlighting, consolidated renderer.
+- Markdown textarea + preview first; richer editor only after core flows pass.
+- PostgreSQL 17 + pgvector 0.8.2; PostgreSQL full-text search; pgcrypto for immutable UTF-8 body hashes; optional pg_trgm later for name/code matching.
+- Drizzle ORM 0.45.2 + pg 8.23.0, Drizzle Kit 0.31.10 and reviewed, checksummed SQL migrations.
+- Zod 4.6.5 validates configuration, routes, jobs, strict structured output, embedding batches and rerank results.
+- Better Auth 1.7.5 provides owner provisioning/recovery, private sessions and disabled public signup (P04 complete).
+- Graphile Worker 0.17.3 on the same PostgreSQL database; transactional enqueue, bounded retries, worker/stage heartbeat, idempotent publishing and crash recovery are implemented. Production chunks/embedding handlers remain P08; graph handlers remain P09. eventsource-parser 3.0.6 handles streamed SSE framing.
+- One typed server-side OpenRouter client for generation/structured outputs/embeddings/native rerank.
+- Managed persistent attachment volume in the default self-hosted deployment.
+- Docker Compose: web, worker and PostgreSQL/pgvector; optional HTTPS reverse proxy.
+- Real-service unit/integration tests, browser workflows and optional live-provider smoke tests.
+
+Pin compatible, tested package/image versions during implementation. Model choice is configurable, not an unverified "latest/best" claim.
+
+PostgreSQL consolidates notes, relationships, vectors, sessions and jobs. It adds one database service compared with SQLite, but removes competing SQLite/Turso/Qdrant authorities and supports transactional updates across the full feature set. This is a feature/maintenance choice, not a claim that one user requires PostgreSQL. Support one backend at release.
+
+Graph nodes/edges live in relational tables and use bounded traversals. No separate Neo4j, Redis, vector server, Kubernetes or autonomous agent framework is required. A worker is another process from the same application, not a second independently designed backend.
+
+SQL and filesystem writes stay in repositories/services. Secrets stay server-side. All write surfaces reuse the same save service. Future adapters must pass the same behavior tests, not revive mixed authorities.
+
+09. DATA MODEL
+
+Use UUIDs, UTC timestamps, explicit foreign keys, content hashes, migrations and uniqueness constraints. Local timezone is a preference for presentation/scheduling.
+
+Logical entities:
+- installation/auth: installation ID, one owner ID, setup state, accounts/sessions/settings; enforce one owner beyond hiding signup.
+- folders/folder_aliases: parent, human name, slug, order, deletion state; persistent empty folders and cycle protection.
+- notes: primary folder, title, COMPLETE Markdown, version/hash, lifecycle, provenance, review state, importance, timestamps.
+- note_versions: immutable title/body snapshots, author/change reason/model metadata/operation; unique (note_id, version).
+- sources/attachments/note_sources: original text/message/file/snapshot, MIME/name/size/hash, generated storage key, origin URL/time, extraction state, evidence links.
+- conversations/messages/message_citations: history, selected scope, ordered roles/content/status, model/usage/operation and cited source/note/chunk versions.
+- operations/improvement_proposals: idempotency key, validated action, destination/target/expected version, original, proposal/diff, status/result/error.
+- chunks/embedding_profiles/chunk_embeddings: parent version, sequence, heading/page/offsets, code language, text/hash, tokens, model/dimensions/normalization/chunker version.
+- graph_nodes/concept_aliases/graph_edges/graph_evidence: scoped identities, typed relations, provenance/review status, supported text/version/offsets; valid endpoints and unique relationships.
+- study_cards/review_schedule/review_events: atomic recall target/evidence, answer/rubric, due date, interval, explicit rating/history, algorithm version.
+- quiz_sessions/quiz_questions/quiz_attempts: stored question/option IDs and hidden answer keys, source version, rubric, answer/result/feedback and submission idempotency.
+- Graphile job schema + application processing state: per-stage progress, attempts/error, processed version and retry visibility.
+- usage_events: operation/model/request, reported tokens/cost where available, latency/outcome; no raw secrets/full private prompt logging by default.
+
+Canonical note, version, provenance, operation outcome and background-job enqueue commit in one transaction. Complete content is never only a preview, index payload or queued job.
+
+Files and database cannot share a transaction: stage an attachment at a generated key, validate hash, commit tracked state, finalize idempotently and reconcile abandoned work after restart.
+
+P02–P05 implement 40 typed application tables plus Graphile's schema. Reviewed SQL adds immutable snapshots, a deferred current-version consistency check, source/chunk quote validation, cycle prevention and current_chunks/current_embeddings/current_graph_edges views. Chunk/evidence offsets are zero-based Unicode code points, not JavaScript UTF-16 code units. The vector schema currently fixes dimensions at 1536; configuration rejects incompatible dimensions.
+
+Current note text becomes keyword-searchable synchronously. Long chunk extraction/embeddings/graph run asynchronously. Retrieval excludes obsolete/deleted versions and uses current full text/direct context while projections are pending. Old vector results cannot supply stale content after an edit.
+
+10. READABLE STORAGE, IMPORT, EXPORT
+
+Readable Markdown is canonical in the database. Human notes need not follow a fixed template; non-programming subjects do not require Code Example headings.
+
+Export folder directories and .md notes with stable ID/provenance/relation metadata in documented front matter or a manifest. Include attachments and graph JSON where appropriate. Read/export/chat must work without a Markdown mirror.
+
+An optional Obsidian mirror is a generated projection. External edits require an explicit import/conflict workflow; bidirectional synchronization is later work.
+
+Release input: text, Markdown, code, Markdown/ZIP import, and conversation-derived notes.
+Follow-on input: PDF, web-page snapshots and ChatGPT text/exports.
+Later optional: images/OCR and audio.
+Only advertise formats actually implemented; a generic upload button is not arbitrary-format support.
+
+Imports preserve originals and full extraction, show item progress, and deduplicate by source hash/operation. Offer skip/create/merge for conflicts, never overwrite by filename alone. Reject traversal, unsafe paths, oversized decompressed archives and internal-network URL targets; validate redirects. Imported content is data, not instructions for tools.
+
+A Markdown ZIP is not a full backup. Recovery includes database, attachments and manifests; document separate protection/recovery of encryption secrets. Test restoring notes, curated graph, chats and learning records into a fresh instance. Rebuildable embeddings can be omitted from a portable export with a documented rebuild.
+
+11. OPENROUTER
+
+All AI traffic uses the owner's server-side OpenRouter key. No NEXT_PUBLIC keys, client storage, returned raw secrets, logs or committed credentials. Environment/secret-file configuration is default. Editable stored keys require encryption with an independent deployment secret.
+
+Verified API surface:
+  https://openrouter.ai/api/v1/chat/completions
+  https://openrouter.ai/api/v1/embeddings
+  https://openrouter.ai/api/v1/rerank
+
+Configure independent chat, improvement/structured-extraction, embedding and rerank models. Chat and extraction may share a capable model. Embedding/rerank require their own supported task types. Check live catalog/capabilities and validate with the owner's account at setup.
+
+Official examples currently include openai/text-embedding-3-small at 1536 dimensions and cohere/rerank-v3.5. They are starting points, not permanent availability or quality guarantees. Calls still go through OpenRouter; the design does not require separate OpenAI/Cohere credentials. Select chat model during setup instead of claiming a universal best model.
+
+Configuration to implement:
+  OPENROUTER_API_KEY
+  OPENROUTER_CHAT_MODEL
+  OPENROUTER_STRUCTURED_MODEL (may use the chosen chat model)
+  OPENROUTER_EMBEDDING_MODEL
+  OPENROUTER_RERANK_MODEL
+  OPENROUTER_EMBEDDING_DIMENSIONS
+  AI_INDEXING_ENABLED
+  RERANK_ENABLED
+  DATABASE_URL
+  APP_URL
+  AUTH_SECRET
+  DATA_DIR
+  SETTINGS_ENCRYPTION_KEY (only when editable stored secrets are implemented)
+
+Start with one validated vector profile, e.g. 1536 dimensions. Store model/dimension/chunker metadata. A model change builds a new profile in the background and switches only when ready. A dimension change requires compatible schema/index migration. Never mix vector spaces, silently fall back to a different embedding model, or treat token hashes as learned semantic vectors. Exact vector scans are acceptable for small libraries; add an approximate index when justified by measurement.
+
+Use streaming/cancellation/timeouts and typed errors. Structured tasks use supported JSON Schema plus require_parameters routing where appropriate, with local Zod validation in all cases. Validate embedding response indexes/dimensions/finite numbers and rerank indexes/scores. Do not confuse schema validation with factual verification.
+
+Bound retries/backoff/concurrency and honor rate limits. Missing/invalid key, no credits, incompatible models, timeout and cancellation must be clear. Never pretend a template/mock is a successful AI answer. Plain save and lexical search still work. Failed rerank falls back to fusion; failed embedding leaves retryable jobs and lexical retrieval. Do not switch gateways silently.
+
+Show indexing/generation budgets and usage where reported. Explain that relevant content is sent to OpenRouter and upstream providers; self-hosting storage does not mean local inference. Honor supported privacy/routing controls without promising universal zero retention.
+
+12. RETRIEVAL AND RAG
+
+One retrieval service serves search/chat/related notes/study/graph, with explicit selection strategies.
+
+Factual question flow:
+1. Validate owner, mode, folder/note scope, lifecycle/provenance filters.
+2. Resolve references against stored conversation and selected note IDs.
+3. Search exact titles/code identifiers and PostgreSQL full text; run active-profile semantic search when available.
+4. Fuse rankings, deduplicate current chunks/versions and include newly saved current content pending embedding.
+5. Optionally expand evidenced graph relationships within a bounded neighborhood; reapply scope.
+6. Native OpenRouter rerank when useful/enabled/within budget; exact matches may skip it and failures use fusion.
+7. Select diverse supporting passages plus needed surrounding context/code, respecting a token budget.
+8. Answer with stable source/version citations. Label general additions, or abstain in strict My knowledge only mode.
+9. Persist citations and useful retrieval diagnostics without promoting retrieved text into trusted instructions.
+
+Starting tuning values, subject to evaluation: heading-aware 400-800-token chunks with limited overlap; 20-40 candidates; 5-10 evidence passages within model context. Keep short notes whole. Preserve code-block context/parent links. Do not erase multilingual text or syntax with ASCII-only normalization.
+
+Broad folder revision/summaries must enumerate coverage across current notes/concepts, not reuse ordinary top-k and claim completeness. Cache versioned summaries for large folders and disclose coverage limits. Missing stored material is not proof of missing user knowledge; suggested gaps need a named study goal/syllabus.
+
+13. KNOWLEDGE GRAPH
+
+The graph is more than folder hierarchy or vector similarity:
+  Java [folder] -> contains -> Classes [note]
+  Classes [note] -> explains -> Constructor [concept]
+  Constructor [concept] -> part_of -> Class [concept]
+  Inheritance [concept] -> prerequisite -> Polymorphism [concept]
+
+Create deterministic folder/note/source edges without AI. AI proposes scoped concepts, aliases and typed edges: explains, prerequisite, uses, contrasts_with, example_of, common_mistake, related_to, contradicts. Define direction: A prerequisite B means A is a prerequisite for B.
+
+Each derived assertion stores supporting source/chunk/version/text offsets and model/extraction version. Validate cited evidence actually exists. Keep owner-curated edges separate from rebuildable AI projections. Label proposed/unreviewed relations and confidence.
+
+Database quote checks prove that the quoted text exists, not that an extracted relationship or the source itself is factually correct. Retrieval must evaluate support, preserve contradictory evidence and show uncertainty. Current means the latest saved version; live-world freshness needs dated authoritative sources and an explicit refresh/import flow. Old notes cannot establish today's facts merely because their index is current.
+
+Do not merge labels without context: Java interfaces and network interfaces are separate concepts. Preserve conflicts and both sources; support owner resolution. Unsupported/low-confidence edges cannot serve as answer evidence. A graph connection discovers passages; it is not proof of a claim.
+
+Default retrieval expansion is bounded one-hop. Two hops are optional for prerequisite/relationship questions, with strict candidate/time limits and scope reapplied. Edits/trash invalidate old derived evidence; outdated jobs cannot overwrite newer graph/vector versions. Preserve curated relationships/history during rebuilds.
+
+Provide a focused graph neighborhood and an accessible relationship list, with search, source inspection and correction. A large animated visualization is not required before graph-backed retrieval works.
+
+14. REVISION AND PRACTICE
+
+Support quick review, topic review, weak areas, due cards, random practice, interview/exam preparation. LeetCode is an optional view over the same notes/sources/study model.
+
+Use atomic recall targets linked to source versions. Start with MCQ and self-rated recall; add short answer, code completion/debugging, predict output and explanation with appropriate rubrics. Code is treated as text unless an explicitly sandboxed execution feature is built.
+
+Answer keys/rubrics remain server-side until reveal/grading. MCQ submits stored option IDs. Free-text grading records rubric, uncertainty and owner correction. Validate attempt/session/question membership. Idempotent submissions and derived session scores prevent duplicate increments or scores above question count.
+
+Use explicit quiz outcomes and recall ratings for scheduling. Begin with a documented deterministic spaced-review algorithm, stored raw events/algorithm version and timezone-aware due dates. Keep importance, interest, query frequency and mastery distinct. Viewing/searching is not failed recall.
+
+Show feedback/source/next review and follow-ups. Source updates/deletion mark cards stale for refresh. General starter questions are visibly separate from personal material. Practice does not itself create new knowledge unless saved.
+
+15. DEPLOYMENT AND OPERATIONS
+
+Default: one Docker Compose stack on one host.
+  web: Next standalone, exposed through intended port/proxy
+  worker: same application version, Graphile task runner, no public port
+  db: pinned PostgreSQL/pgvector image, persistent DB volume, no public DB port
+  files: persistent attachment volume shared as needed
+  optional proxy: HTTPS and unbuffered streaming, or documented external proxy
+
+After environment setup and owner provisioning, target docker compose up -d --build. No GPU/cloud account/separate vector server is required for OpenRouter inference. Test final commands and resource requirements; this target is not proof current Compose works.
+
+Run migrations as an explicit serialized step before web/worker traffic. Include worker/migration artifacts separately where Next tracing does not package them. Run non-root with tested volume ownership. Add liveness, DB readiness, worker heartbeat and visible degraded AI/index state. Manual-note readiness must not depend on an AI key.
+
+Provision one owner using a local CLI or secret-protected setup that cannot be claimed by the first anonymous visitor. Enforce one owner in the backend as well as disabling signup. Use secure sessions, origin/CSRF checks, revocation, login throttling and local password recovery. SMTP is not mandatory.
+
+Set request/upload/decompression limits, timeouts and controlled concurrency. Restrict provider tests to OpenRouter. Validate URL import destinations/redirects and filesystem containment. Render untrusted Markdown/links safely and serve attachment MIME types without script execution. Redact secrets and private prompt content. Test backup restoration and upgrade behavior.
+
+Future managed hosting needs external DB, durable attachments and a separately running worker. Vercel alone does not supply these, and /tmp or memory fallback is never production persistence.
+
+Open-source release requires a maintainer-chosen license, setup/upgrade/backup guide, real screenshots, tracked .env.example, .dockerignore excluding secrets/data, contribution/security guidance, CI and synthetic demo data. Do not publish a personal vault or select a license for the owner without a stated choice.
+
+16. INITIAL DATA AND MIGRATION
+
+The owner confirmed on 2026-09-18 that existing project/vault data is mock data and need not be preserved. Fresh PostgreSQL initialization is the default. Do not auto-import the demo vault, invent historical study records or delay the product for a comprehensive legacy conversion.
+
+P02 provides an optional read-only SQLite/Markdown inventory and opt-in import. The manifest reports paths, hashes, counts, missing full content and conflicting copies without exporting credentials or private bodies. Full bodies, source provenance and valid original creation timestamps are imported; conflicting DB/file copies remain separate. Checkpoint keys make a rerun idempotent. Secret settings, remote Turso and historical chats/review aggregates are not automatically imported. Export locally first if a later installation needs Turso recovery.
+
+Synthetic conflicting fixtures test full-content hashes, preserved timestamps, unchanged source DB and rerun behavior. The existing five mock Markdown files were inventoried, not imported into a production database.
+
+P03 connects every application surface to PostgreSQL and removes runtime SQLite/Turso/Qdrant branches. The optional better-sqlite3 reader remains only for local legacy inventory/import; original mock files are not deleted or imported automatically. There are no permanent dual writes. Retain reviewed migration history for future real deployments.
+
+17. ACCEPTANCE AND NEXT SESSION
+
+Tests call actual production services/repositories, not copied rules. Mock OpenRouter for deterministic errors/streams/schemas; integration-test real PostgreSQL transactions/migrations. A separate optional live-key suite verifies provider compatibility. Mocks do not establish model quality or account access.
+
+SC01. Create nested Java folders; + -> No improvement preserves exact body/placement after refresh/restart, with no generation call.
+SC02. + -> Yes previews/edit/applies improvement; original and versions survive reject/failure/cancel.
+SC03. /java class explanation streams and automatically saves the same finalized answer under Java; receipt opens after reload.
+SC04. Ask-scoped /java and ordinary chat cite evidence without mutating knowledge.
+SC05. Repeated operation/answer submissions have no duplicate effects; similar prompts never overwrite an unrelated note.
+SC06. Two-tab edits detect conflicts; moves/rename preserve IDs/links/aliases.
+SC07. Worker/provider interruption leaves notes readable/lexically searchable; retry resumes and stale jobs cannot publish.
+SC08. Retrieve exact syntax, paraphrases and late paragraphs; honor folder scope/current versions and abstain on missing evidence.
+SC09. Graph relations expose evidence; source edit/trash excludes stale projections and preserves curated history.
+SC10. Quiz/review uses stored questions, bounded scores, source feedback and actual recall scheduling.
+SC11. Markdown/ZIP import preserves full content, handles duplicates/conflicts and rejects unsafe paths/expansions.
+SC12. DB-only notes read/export without a mirror; full restore recovers attachments, graph, chats and study records.
+SC13. Anonymous personal API/download access fails; signup/second-owner creation fails.
+SC14. Desktop/mobile/keyboard/accessible dialogs handle long Markdown/code, loading, empty/error/recovery states.
+SC15. Fresh documented deployment, upgrade/restart and retained volumes pass build/types/lint/tests/health without secrets exposure.
+
+Maintain retrieval fixtures for syntax, DSA, college notes, resumes, conflicting notes and absent answers. Record expected source IDs, recall@k, citation validity, unsupported claims, latency and observed usage. Establish measured baselines; accept graph/rerank changes because they improve real cases, not because they add infrastructure.
+
+P01 now fixes duplicate CREATE overwrites, terminal IGNORE/read-only outcomes, trusted/idempotent quiz grading, SQLite migration ordering, silent memory fallback, TypeScript and lint failures. Canned offline AI answers, fabricated quiz fallbacks, obsolete seed code and unused starter assets were removed.
+
+P03 now supplies one validated PostgreSQL knowledge service for create/edit/move/lifecycle/merge/undo, immutable versions and original sources, atomic operation receipts/indexing enqueue, expected-version conflicts and idempotency. Current keyword search includes literal technical tokens. All existing knowledge, chat, settings, dashboard, LeetCode, review, quiz, import and export surfaces read/write PostgreSQL. Legacy paths resolve stable note IDs without vault files. Attachment staging/finalization/reconciliation stores original bytes separately and verifies hashes.
+
+P04 now supplies Better Auth database sessions, local single-owner provisioning/recovery, guarded private routes/pages/downloads/streams, same-origin writes, database-backed login throttling, HTTP/HTTPS cookie configuration and sign-in/out/session-expiry recovery. Public signup and remote password recovery are unavailable. Password recovery revokes every session. HTTPS is required for a non-local APP_URL.
+
+WHERE INFORMATION IS STORED NOW:
+- Full Markdown, folders, versions, text sources, operations, chats, preferences, owner/session records and study results: PostgreSQL. Docker persists this in its postgres named volume.
+- Original uploaded bytes: DATA_DIR, default data/attachments locally and /app/data/attachments in Docker's attachments named volume. DB records retain file IDs, hashes, state and source links.
+- Secrets: server environment / untracked .env, not Markdown or browser responses.
+- Graph/vector tables, durable queue, usage reservations and worker/stage heartbeats: PostgreSQL. Worker infrastructure is implemented; production projection handlers remain P08/P09. Pending jobs or a healthy worker are not proof of an indexed graph.
+- Markdown ZIP: a derived active-note export with manifest. vault/ and data/myai.db are legacy mock inputs, not application authorities. A ZIP is not a full backup.
+
+Current chat persists conversation history and uses bounded completed history plus current folder-scoped keyword evidence, optionally reranked through OpenRouter. Ask does not create notes. Explicit Save as written preserves input; /existing-folder topic defaults to generation and saves only a complete response through the canonical service. Unknown folders fail visibly. Full mode selection, improvement preview/apply, typed AI tools, adjacent explorer/chat and grounded semantic retrieval remain P06–P09. Provider failure does not fabricate answers or quiz content. Current revision feedback is reading self-report; evidence-based recall scheduling remains P10.
+
+P05 adds independent chat/structured/embedding/rerank model settings, strict JSON-schema requests plus local validation, complete-stream enforcement, batch/profile checks, rerank ID preservation and ordered lexical fallback. Exact graph quote/Unicode offsets are validated before returning extraction results; semantic support still needs P09 evaluation. Successful embedding batches record a reusable inactive profile; activation requires the P08 reindex workflow. No generated fake vectors or unverified graph edges are installed.
+
+Usage events record task/model, request ID, tokens/cost when reported, duration and outcome without copying prompts into usage logs. Daily request/token admission is serialized in PostgreSQL, including retries. Unknown usage retains a conservative reservation until the UTC day ends. Reported provider cost is not a hard billing cap, and external generation cannot be guaranteed exactly once after a network interruption.
+
+The worker uses stage locks and run tokens: it prepares outside a transaction, then publishes projections/readiness together only if the note version and indexing configuration still match. Model changes fence old work; missing handlers stay pending with an explicit reason. Recovery of a terminated worker uses stale heartbeat plus an available stage lock; live workers cannot be displaced merely by a duplicate job. Retry/rebuild controls and local CLI commands are available.
+
+Validation and deployment evidence are recorded in TODO.md and docs/P05-IMPLEMENTATION.md (P03/P04 history remains in its earlier report). The frontend and API run together in the authenticated Docker web service, alongside the worker, PostgreSQL and attachment volumes. Configure APP_URL, independent deployment secrets and the owner before use. Public HTTPS proxy/release hardening, full backup automation and live OpenRouter compatibility remain unverified later tasks. No perfect factual accuracy or measured full-RAG claim is made.
+
+Remaining P05 task: P05.11, live checks after configuring OPENROUTER_API_KEY and compatible models. Next implementation task: P10.01, source-linked revision/practice and scheduling. P06 browser acceptance remains pending an available browser; code completion must not be mistaken for a passed visual acceptance run. Preserve service/HTTP checks and update completed IDs, paths, evidence/date and limitations after every task.
+
+P06 now provides a persistent nested explorer inside the app sidebar, with root/nested + actions for notes, subfolders and folder-scoped imports. Folder moves preserve stable IDs and old aliases; ordering and additional aliases are editable. Deletion only accepts empty folders without historical note references, preserving undo integrity. Canonical note links open a server-rendered reader/editor beside the existing AI chat; smaller screens switch panes.
+
+Direct capture preserves text exactly when saved as written. A versioned localStorage draft survives dialog close/reload in the same browser; it is not a server backup or cross-device draft. Choosing AI improvement persists an operation and immutable original, obtains a structured proposal and presents original/proposed text side by side with editable proposed content and Markdown/code preview. Apply commits the reviewed content, original-source link, provenance, version and indexing enqueue atomically. Reject, cancel or provider failure cannot replace the canonical note. Live factual/model accuracy is not claimed.
+
+The note workspace exposes current provenance, original sources, per-stage indexing state, importance, move/archive/trash/restore, complete version history and guarded undo. Restoring historical content copies the historical source links into a new version. Optimistic conflicts preserve the browser draft and show the current note; the owner must review/rebase and explicitly save. Modal focus/Escape and responsive layouts are implemented; rendered browser acceptance remains pending. Details: docs/P06-IMPLEMENTATION.md.
+
+P07 now provides explicit Ask, Generate & Save, Save As Written and Improve & Save, alongside Auto (plain text asks; slash-prefixed topics generate and save). /folder alone only selects scope. Nested paths and aliases resolve server-side; explicit Ask overrides slash generation. The picker chooses stable IDs, and unknown folders require an explicit Create action. No legacy /imp importance mutation or /knowledge catch-all remains: those tokens refer to real folders/aliases only; choose Root for root scope and use note importance controls.
+
+Chat requests record durable operations and ordered user/assistant messages before generation. Complete generation commits exact final Markdown, source/provenance, indexing enqueue and conversation result before reporting Saved. Five-second checkpoints persist partial output; a three-minute stale lease marks abandoned work interrupted. Each retry has a new attempt token on the same operation, preventing obsolete streams from committing. Duplicate keys return the committed result; restarting external inference can incur another charge. Stop/cancel and status/retry controls preserve partial messages without saving incomplete generated notes. Only server-stored completed turns become trusted conversation context.
+
+Read/search/folder tools are scoped; write tools use a server-validated allowlist and owner-selected action/target/version. AI drafts bounded content proposals; it cannot choose another target or apply its own plan. Save As Written replacing a selected note shows the original/replacement first. Improve/Modify and move/trash/restore show a reviewable change set; apply uses the canonical versioned service. Save this answer copies the exact completed server-stored Ask response and links it to the original prompt/message. Stable note IDs, source versions and conversation/message links survive folder moves. P08/P09 add unified passage retrieval and evidence-linked graph expansion; model factual perfection is not claimed.
+
+Conversations support create, rename, archive/restore, paginated history and delete. Migration 0005 adds deleted_at; deletion hides history while retaining provenance-linked messages. It is not physical erasure. Note source panels link to the original conversation/message. Chat drafts, pending-request keys and unapplied tool plans have same-browser recovery; database history remains authoritative. Documentation and validation: docs/P07-IMPLEMENTATION.md. Full browser and live-provider acceptance remain pending.
+
+18. PRIMARY REFERENCES CHECKED FOR THIS PLAN
+
+Documentation establishes API/library capabilities, not successful calls with the owner's key. Recheck when implementing.
+- OpenRouter embeddings: https://openrouter.ai/docs/api/api-reference/embeddings/submit-an-embedding-request
+- OpenRouter rerank: https://openrouter.ai/docs/api/api-reference/rerank/submit-a-rerank-request
+- Structured outputs: https://openrouter.ai/docs/guides/features/structured-outputs
+- OpenRouter RAG: https://openrouter.ai/docs/cookbook/evaluate-and-optimize/rag
+- OpenRouter documentation index: https://openrouter.ai/docs/llms.txt
+- pgvector: https://github.com/pgvector/pgvector
+- Drizzle PostgreSQL: https://orm.drizzle.team/docs/get-started-postgresql
+- Drizzle vectors: https://orm.drizzle.team/docs/guides/vector-similarity-search
+- Better Auth: https://better-auth.com/docs/authentication/email-password
+- Graphile Worker: https://worker.graphile.org/docs
+- SQL enqueue: https://worker.graphile.org/docs/sql-add-job
+- Installed Next.js: node_modules/next/dist/docs/ (see AGENTS.md).
+
+
+P08/P09 implementation addendum (2026-09-20)
+
+One RetrievalService now serves chat, search, typed search tools and topic-based study selection. Current full-note lexical matching always works, including late paragraphs and exact code tokens. Heading/code-aware chunks carry immutable versions, hashes, stable IDs and Unicode offsets. Optional active-profile pgvector cosine results combine with lexical ranks through reciprocal rank fusion (k=60), bounded OpenRouter rerank and optional bounded graph expansion. Every stage applies folder/origin/current-version/lifecycle filters, including a final check after remote inference. Profile changes disable incompatible vectors until current-note coverage is complete. Search supports quoted phrases, folder/subfolder/origin filters and bounded pagination. Broad folder summaries report explicit partial/complete coverage; top hits are never described as a complete large-folder summary.
+
+Ask now answers only from personal-library evidence. It validates quote/ID membership and independently checks each proposed claim against the cited passages, omitting unsupported details and abstaining when evidence is absent. Ask creates no knowledge note; derived chunks can be materialized to retain exact evidence links. General creation remains Generate & Save, explicitly separate from evidence-supported answers. /evidence/ID shows historical/current status, exact text, offsets, version and source dates. Validated chat quotes are stored in message_citations. No claim of zero hallucinations or up-to-date world knowledge is made.
+
+The worker has production chunk, embedding and graph handlers. Local chunking and structural folder/source graph links do not require AI indexing. Graph extraction proceeds independently of embeddings. Intermediate results in projection_cache allow retries to resume completed inference; runtime version/configuration/attempt fences control publication. Incomplete or obsolete work is never ready. PostgreSQL is the authority for notes, readable Markdown, sources, versions, conversations, citations, chunks, profiles/vectors, graph and inference staging; binary attachments use the persistent attachment directory/volume.
+
+Graph note/topic/source links are deterministic; concepts and semantic relations from AI remain proposals. Each relation has exact chunk/version/offset support and model/extractor provenance. Equal names do not imply equal meanings: concepts resolve conservatively by folder and source sense, with owner aliases and reviewed merges for cross-note identity. Owner acceptance/correction creates curated relationships; removal suppresses proposals across rebuilds. Source edits/trash exclude stale support while preserving curated history. Graph expansion returns supporting current passages, never unsupported relation text as proof. /graph offers focused neighborhoods, an accessible relationship list, source inspection, correction, removal, aliases and merge. Graph expansion is configurable and off by default.
+
+Deploy migrations 0006–0008 and matching web/worker, then rebuild existing notes through Settings or index:rebuild. All AI calls remain server-side OpenRouter. The schema requires 1536-dimensional embeddings; model compatibility must be checked with the configured account. Current storage has 41 application tables. There is no additional graph/vector service or new runtime dependency. Credentials belong in ignored .env.local/.env or deployment secrets; .env.example contains placeholders only.
+
+Acceptance record: docs/P08-P09-IMPLEMENTATION.md. Production-service fixtures and HTTP tests verify pipeline behavior with synthetic providers; the synthetic recall/support figures do not measure live model quality. Live checks (P05.11), browser interaction, P10 learning, P11 recovery and P12 release acceptance remain separate. The next AI session should start with P10.01 and retain these accuracy boundaries.
+
+
+2026-09-21 CURRENT IMPLEMENTATION ADDENDUM — P10/P11
+
+The personal second brain now includes a complete source-linked learning flow. /quiz and /review share real folders, optional topic/current-note selection, seven formats (MCQ, self-rated recall, short answer, explanation, completion, debugging, predicted output), recent-session resume and due/folder/weak/random/interview/exam modes. All generated cards point to exact current chunks and note versions; answer keys, rubrics and UUID option IDs remain server-side until submission/reveal. Structured generation is independently checked against verbatim quotes. Unsupported cards are rejected. Model uncertainty is visible and requires owner assessment; one-character explanations and duplicate score increments are rejected. Corrections retain original judgments and raw learning events. Editing/trashing a source makes its cards stale and blocks further grading; regeneration keeps old history.
+
+Spaced review uses documented myai-calendar-v1: Again is 10 minutes, Hard at least 1 day/half previous, Good 1 then 6 days then doubling, Easy at least 3 days/tripling, maximum 365 days. Calendar due time is 09:00 in the session's saved IANA timezone. Corrections replay original recall timestamps in order, preserving later reviews. This is a deterministic conservative scheduler, not a retention model. Weak areas use the latest recall rating. Searches, views and note importance never create failures. Practice never changes source notes automatically, and code is never executed.
+
+Import is available from each folder + and Settings with preview and explicit skip/copy/append-merge. Supported UTF-8 Markdown, text and code files may be uploaded individually or in ZIP. Code is safely fenced for reading while full original text and upload bytes remain provenance. Imports validate actual decompression output, paths, collisions, UTF-8 and size limits, commit a bounded batch atomically, and retain per-file receipts for retry. PDF/OCR/Office and structured conversation extraction remain unsupported. Plain pasted conversation import still preserves full text. All content goes through the same canonical note/source/version/indexing service.
+
+Portable export produces DB-derived Markdown plus folder/ID/source/graph/attachment inventories. It can include archived/trashed notes but is NOT a full installation backup. No automatic Markdown mirror is retained: external edits are explicit previewed imports. Full backup saves PostgreSQL (including owner, chat, source history, graph and learning) plus attachment objects together, with checksum validation, migration inventory and a fresh-only restore command. Stop writers before backing up/restoring. Preserve matching deployment secrets/images separately. Details and operational commands are in docs/RECOVERY.md.
+
+Permanent deletion is a local UUID/version-confirmed maintenance action after 30 days in trash. It removes the note and associated private projections/learning/citations, redacts related operation payloads and erases affected original uploads. Shared ZIP originals are erased if they contain the purged note; other notes keep their extracted source text and immutable upload tombstone. External backups and deliberately copied text require separate retention handling.
+
+Apply migrations 0009_practice.sql and 0010_attachment_purge.sql before starting this code. There are 41 typed application tables and 11 migrations. No new production dependency. docs/P10-P11-IMPLEMENTATION.md records implementation boundaries and tested invariants. P12 is the next implementation phase; live OpenRouter quality checks and browser acceptance remain explicitly open. No architecture can promise zero hallucinations: current-source validation, exact evidence, abstention and owner correction remain mandatory.
+
+23. P12 DEPLOYMENT AND RELEASE HANDOFF — 2026-09-21
+
+This addendum supersedes earlier next-task/live-compatibility statements. P12 adds digest-pinned Caddy HTTPS deployment, matching standalone web/maintenance images, private persistent PostgreSQL/attachments, generated environment secrets, explicit readiness, shared AI concurrency limits, bounded uploads, safe external-image rendering, accessible mobile navigation/focus/contrast and deterministic history timestamps across server/browser timezones. README.md is the operator guide; docs/P12-RELEASE.md contains measured results and limitations. No schema migration beyond 0010 is needed.
+
+Use scripts/setup-env.mjs or a private .env to configure deployment. Docker Compose reads .env; local Next/CLI reads .env.local first. PostgreSQL remains the authority for all Markdown/data/graph. Files in the attachment volume and database must be backed up together. Full backup, fresh restore and rollback are documented; do not use down -v on owner volumes or run old code against a newer schema.
+
+P05.11 passed live checks with chat nvidia/nemotron-3-ultra-550b-a55b:free, structured openai/gpt-4.1-mini, embeddings openai/text-embedding-3-small at 1536 dimensions, and rerank nvidia/llama-nemotron-rerank-vl-1b-v2:free. The existing private environment was not rewritten. The previous free structured/embedding configuration failed its checks. An explicit OpenAI embedding response-name alias was fixed without accepting arbitrary model substitutions or truncating vectors. Compatibility is not a live retrieval/factual-quality benchmark.
+
+Normal CI uses isolated data and no API key. scripts/release-check.mjs builds disposable images/volumes and exercises setup, owner provisioning, saves, attachments, restart/recreation, TLS cookies/origin/SSE and Chromium desktop/mobile behavior. scripts/ai-release-check.ts --live runs separately on synthetic data. OpenRouter charges may apply. Source changes remain uncommitted; no remote deployment or publication has occurred.
+
+Remaining gates are tracked precisely in TODO.md: actual public DNS/ACME/remote-network acceptance, the owner's open-source license selection, broader live improvement/practice/reconnect/accessibility acceptance and a final committed-checkout release matrix. Do not relabel these as completed or restart the underlying architecture work.

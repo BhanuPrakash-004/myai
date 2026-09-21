@@ -1,28 +1,7 @@
-import { NextResponse } from "next/server";
-import {
-  getDashboardStats,
-  getFrequentlyForgotten,
-  getWeakAreas,
-  getRecentMemories,
-  getImportantMemories,
-} from "@/lib/memory/tracker";
-
-export async function GET() {
-  try {
-    const stats = getDashboardStats();
-    const forgotten = getFrequentlyForgotten(5);
-    const weakAreas = getWeakAreas(5);
-    const recent = getRecentMemories(5);
-    const important = getImportantMemories(5);
-
-    return NextResponse.json({
-      stats,
-      forgotten,
-      weakAreas,
-      recent,
-      important,
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+import { NextRequest } from "next/server";
+import { StudyService } from "@/lib/storage/study";
+import { getStorage } from "@/lib/storage/client";
+import { privateRoute } from "@/lib/http";
+import { ok,clampInt } from "@/lib/api";
+export const runtime="nodejs";
+export const GET=privateRoute(async(r:NextRequest)=>ok(await new StudyService(getStorage().pool).dashboard(clampInt(r.nextUrl.searchParams.get("limit"),5,1,20))));
